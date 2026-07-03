@@ -1,10 +1,9 @@
-import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 import type { Ctx, ResolvedOptions } from "../types";
 import { createLog } from "../utils/log";
-import { bakName } from "../utils/snippet";
 
 const log = createLog("mixer");
 
@@ -21,8 +20,6 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
   // 惰性求值：ctx 由 :config 的 config 钩子填充，工厂运行时尚未就绪。
   const snippetsPath = () => resolve(ctx.themePath, "snippets");
   const snippetViteMixer = () => resolve(snippetsPath(), ctx.snippet);
-  // 备份与 snippet 同目录，命名派生见 bakName（reload 的跳过规则与此共用单一来源）。
-  const snippetViteMixerBak = () => resolve(snippetsPath(), bakName(ctx.snippet));
 
   // 写出 snippet = prefix + 各 tag + dev_mode 尾。dev/build 共用此信封，
   // 仅差 prefix（build 带 disclaimer）与 dev_mode 真假。
@@ -35,8 +32,8 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
 
   // 确保 layout/theme.liquid 引用了 mixer snippet：无引用时在 </head> 前注入 render 标签，
   // 免去接入时的手动一步。幂等：已有引用（任意引号、任意位置，含条件分支内的自定义写法）即跳过，
-  // 不动用户的手工编排。持久写入而非 dev 期临时覆写——render 标签是主题的生产依赖
-  //（店铺端也要渲染产物），必须随主题仓库提交，不适用退场恢复。
+  // 不动用户的手工编排。持久写入——render 标签是主题的生产依赖（店铺端也要渲染产物），
+  // 必须随主题仓库提交。
   const ensureRenderTag = (): void => {
     const layout = resolve(ctx.themePath, "layout", "theme.liquid");
     if (!existsSync(layout)) {
@@ -69,35 +66,7 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
     configureServer(server) {
       ensureRenderTag();
 
-      // 退场恢复：snippet 是被 git 跟踪的构建产物（店铺走 GitHub 集成时必须保持跟踪），
-      // dev 覆写期间 git pull 会因「本地改动会被覆盖」中止。覆写前把盘上的生产形态备份为
-      // 同目录 .bak.liquid，退出时写回，把脏窗口压缩到 dev 进程存活期。备份落盘而非存内存：
-      // server.restart() 会重建插件实例（闭包态丢失），进程崩溃残留也靠盘上备份在
-      // 下次 dev 启动→退出时接续恢复。
-      let restored = false;
-      const restore = (): void => {
-        if (restored) return;
-        restored = true;
-        if (!existsSync(snippetViteMixerBak())) return;
-        copyFileSync(snippetViteMixerBak(), snippetViteMixer());
-        rmSync(snippetViteMixerBak());
-        log.debug("prod snippet restored from backup");
-      };
-
       server.httpServer?.once("listening", () => {
-        // 覆写 dev 形态前捕获现状：生产形态 → 备份（覆盖旧备份，保持最新）；
-        // 已是 dev 形态（上次异常退出的残留）→ 沿用既有备份，无备份则只能提示手动恢复。
-        const snippet = snippetViteMixer();
-        const current = existsSync(snippet) ? readFileSync(snippet, "utf8") : undefined;
-        if (current !== undefined && !current.includes("assign dev_mode = true")) {
-          writeFileSync(snippetViteMixerBak(), current);
-          log.debug("prod snippet backed up ->", snippetViteMixerBak());
-        } else if (current !== undefined && !existsSync(snippetViteMixerBak())) {
-          log.info(
-            `${ctx.snippet} is already in dev form with no backup (crashed last run?); ` +
-              `cannot restore on exit — run \`git checkout -- snippets/${ctx.snippet}\` in the theme repo`,
-          );
-        }
         log.debug("dev server", server.httpServer?.address());
         // 端口、主机名都取自实际监听地址：端口源自 vite.config 的 server.port；
         // 主机名见 devHost（wildcard 时取 LAN IP，便于手机 / 局域网预览）。
@@ -113,16 +82,6 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
         log.debug("dev snippet ->", snippetViteMixer());
         writeSnippet(tags, true);
       });
-
-      // 优雅关闭（Ctrl+C / SIGTERM / server.restart 均会 close httpServer）即恢复；
-      // restart 场景下旧 server close 先写回生产形态，新实例 listening 再重新捕获，
-      // 时序天然衔接（新 server 须等旧的释放端口）。process "exit" 兜底 close 未触发
-      // 的退出路径（exit 阶段仅同步代码可运行，copyFileSync 满足）。
-      server.httpServer?.once("close", () => {
-        restore();
-        process.off("exit", restore);
-      });
-      process.once("exit", restore);
     },
 
     // generateBundle 仅在 vite build 触发（dev 不触发），故无需再用 command 区分构建态。

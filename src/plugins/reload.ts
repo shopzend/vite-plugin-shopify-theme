@@ -2,7 +2,6 @@ import { join, normalize, sep } from "node:path";
 import type { Plugin } from "vite";
 import type { Ctx, ResolvedOptions } from "../types";
 import { createLog } from "../utils/log";
-import { bakName } from "../utils/snippet";
 
 const log = createLog("reload");
 
@@ -32,9 +31,8 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
         const inTheme = f.startsWith(themeDir + sep) && !f.startsWith(vitifyDir + sep);
         const inExtra = extraDirs.some((d) => f.startsWith(d + sep));
         if (!inTheme && !inExtra) return;
-        // 跳过自己生成的 mixer snippet 及其退场恢复备份，避免启动写入时多刷新一次。
-        if (f.endsWith(`${sep}${ctx.snippet}`) || f.endsWith(`${sep}${bakName(ctx.snippet)}`))
-          return;
+        // 跳过自己生成的 mixer snippet，避免启动写入时多刷新一次。
+        if (f.endsWith(`${sep}${ctx.snippet}`)) return;
         server.ws.send({ type: "full-reload", path: "*" });
         log.info("page reload", f.startsWith(ctx.root + sep) ? f.slice(ctx.root.length + 1) : f);
       };

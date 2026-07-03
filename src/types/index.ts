@@ -21,13 +21,20 @@ export interface ShopifyThemeOptions {
   snippet?: string;
   /** dev 下允许的主题仓库分支前缀列表（任一命中即通过）；默认 ["dev"]，传 false 关闭 */
   devBranches?: string[] | false;
+  /**
+   * dev 下对被 git 跟踪的 mixer snippet 的 skip-worktree 位策略：
+   * "skip"（默认）启动时打上标志，git 忽略其本地变动；
+   * "no-skip" 启动时解除已打的标志（恢复 git 对它的跟踪）；
+   * "off" 不做任何 git 操作
+   */
+  worktree?: "skip" | "no-skip" | "off";
   /** 额外整页 reload 的目录（相对 root） */
   reload?: string[];
   /** 开启 debug 日志；默认 false（经参数传入，不读 process.env） */
   debug?: boolean;
 }
 
-// 工厂合并 DEFAULTS 后的选项：被默认值覆盖的字段（snippet / devBranches / reload / debug）转为必有，
-// 其余仍可选。统一传给四个子插件按需取用（见 ../index.ts）。
+// 工厂合并 DEFAULTS 后的选项：被默认值覆盖的字段（snippet / devBranches / worktree / reload / debug）
+// 转为必有，其余仍可选。统一传给各子插件按需取用（见 ../index.ts）。
 export type ResolvedOptions = ShopifyThemeOptions &
-  Required<Pick<ShopifyThemeOptions, "snippet" | "devBranches" | "reload" | "debug">>;
+  Required<Pick<ShopifyThemeOptions, "snippet" | "devBranches" | "worktree" | "reload" | "debug">>;
