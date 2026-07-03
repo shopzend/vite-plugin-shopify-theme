@@ -1,8 +1,14 @@
-import { createLogger } from "vite";
+import { createLogger, type Logger } from "vite";
 import pc from "picocolors";
 
-// 共享一个 Vite Logger，输出风格（时间戳、颜色、清屏处理）与 dev server 一致
-const logger = createLogger();
+// 默认自建 Logger 仅作 configResolved 前的早期兜底（如 :config 的 config 钩子日志）；
+// resolved 后由 setLogger 换成宿主的 config.logger——宿主的 logLevel / customLogger
+// 才管得住插件输出。输出风格（时间戳、颜色、清屏处理）两者一致。
+let logger: Logger = createLogger();
+
+export function setLogger(l: Logger): void {
+  logger = l;
+}
 
 // Vite Logger 无 debug 档（仅 info / warn / error），用模块级开关充当：默认静默，
 // 由工厂 shopifyTheme(options.debug) 经 setDebug 设定，不读 process.env（来源单一）。

@@ -1,7 +1,7 @@
 import { join, resolve } from "node:path";
 import type { Plugin } from "vite";
 import type { Ctx, ResolvedOptions } from "../types";
-import { createLog } from "../utils/log";
+import { createLog, setLogger } from "../utils/log";
 
 const log = createLog("config");
 
@@ -39,6 +39,10 @@ export default function config(ctx: Ctx, opts: ResolvedOptions): Plugin {
           },
         },
       };
+    },
+    // 把全插件日志切到宿主 logger，logLevel: 'silent' / customLogger 对插件同样生效。
+    configResolved(resolvedConfig) {
+      setLogger(resolvedConfig.logger);
     },
   };
 }

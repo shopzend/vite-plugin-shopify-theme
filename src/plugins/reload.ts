@@ -12,6 +12,11 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
     name: "shopify-theme:reload",
     apply: "serve",
     configureServer(server) {
+      // 关闭出口：宿主想把整页刷新交给 Shopify CLI 自带的 live reload（两套同开会双重刷新）。
+      if (opts.reload === false) {
+        log.debug("reload disabled by option");
+        return;
+      }
       // themePath 单目录前缀即框定主题源码，无需逐子目录白名单。
       const themeDir = normalize(ctx.themePath);
       // 额外整页 reload 目录（相对 root，可在 themePath 外）。
@@ -24,6 +29,23 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
       // 保留是为支持 themePath 在 root 外的契约，成本为零。
       server.watcher.add([themeDir, ...extraDirs]);
 
+      // 防抖合并：批量变更（git checkout / 编辑器多文件保存 / 格式化）在同一窗口内只发一次
+      // full-reload。窗口取尾沿（每次事件重置计时），批量落盘期间不会中途刷新。
+      const DEBOUNCE_MS = 100;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let pending: string[] = [];
+      const rel = (f: string) => (f.startsWith(ctx.root + sep) ? f.slice(ctx.root.length + 1) : f);
+
+      const flush = () => {
+        timer = undefined;
+        server.ws.send({ type: "full-reload", path: "*" });
+        log.info(
+          "page reload",
+          pending.length === 1 ? rel(pending[0]) : `${rel(pending[0])} (+${pending.length - 1} more)`,
+        );
+        pending = [];
+      };
+
       const onChange = (file: string) => {
         const f = normalize(file);
         // 共享 watcher 的事件覆盖整个 root，这层前缀过滤把 reload 限定在主题源码内；
@@ -33,8 +55,9 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
         if (!inTheme && !inExtra) return;
         // 跳过自己生成的 mixer snippet，避免启动写入时多刷新一次。
         if (f.endsWith(`${sep}${ctx.snippet}`)) return;
-        server.ws.send({ type: "full-reload", path: "*" });
-        log.info("page reload", f.startsWith(ctx.root + sep) ? f.slice(ctx.root.length + 1) : f);
+        pending.push(f);
+        clearTimeout(timer);
+        timer = setTimeout(flush, DEBOUNCE_MS);
       };
 
       server.watcher.on("change", onChange);

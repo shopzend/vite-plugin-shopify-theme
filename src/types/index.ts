@@ -28,8 +28,11 @@ export interface ShopifyThemeOptions {
    * "off" 不做任何 git 操作
    */
   worktree?: "skip" | "no-skip" | "off";
-  /** 额外整页 reload 的目录（相对 root） */
-  reload?: string[];
+  /**
+   * 额外整页 reload 的目录（相对 root）；传 false 整体关闭 :reload 的整页刷新
+   *（如想交给 `shopify theme dev` 自带的 live reload——两套机制同开会双重刷新）
+   */
+  reload?: string[] | false;
   /** 开启 debug 日志；默认 false（经参数传入，不读 process.env） */
   debug?: boolean;
 }
