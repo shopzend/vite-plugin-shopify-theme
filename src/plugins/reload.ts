@@ -2,6 +2,7 @@ import { join, normalize, sep } from "node:path";
 import type { Plugin } from "vite";
 import type { Ctx, ResolvedOptions } from "../types";
 import { createLog } from "../utils/log";
+import { bakName } from "../utils/snippet";
 
 const log = createLog("reload");
 
@@ -31,8 +32,9 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
         const inTheme = f.startsWith(themeDir + sep) && !f.startsWith(vitifyDir + sep);
         const inExtra = extraDirs.some((d) => f.startsWith(d + sep));
         if (!inTheme && !inExtra) return;
-        // 跳过自己生成的 mixer snippet，避免启动写入时多刷新一次。
-        if (f.endsWith(`${sep}${ctx.snippet}`)) return;
+        // 跳过自己生成的 mixer snippet 及其退场恢复备份，避免启动写入时多刷新一次。
+        if (f.endsWith(`${sep}${ctx.snippet}`) || f.endsWith(`${sep}${bakName(ctx.snippet)}`))
+          return;
         server.ws.send({ type: "full-reload", path: "*" });
         log.info("page reload", f.startsWith(ctx.root + sep) ? f.slice(ctx.root.length + 1) : f);
       };
@@ -41,9 +43,11 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
       server.watcher.on("add", onChange);
       server.watcher.on("unlink", onChange);
 
-      // dump 共享 watcher 的监听目录全集，仅作 debug 参考：
-      // 初始扫描异步，"listening" 时未必扫完（完整信号是 watcher 的 "ready" 事件）。
-      server.httpServer?.once("listening", () => {
+      // dump 共享 watcher 的监听目录全集，仅作 debug 参考。
+      // 挂 "ready"（初始扫描完成）而非 httpServer "listening"：扫描异步，listening 时
+      // 只能抓到中途快照（显式 add 的 themePath 已扫完、root 递归未下潜到子目录）。
+      // configureServer 在 watcher 创建后同步执行，扫描回调排在其后，不存在错过 ready 的窗口。
+      server.watcher.once("ready", () => {
         const watched = Object.keys(server.watcher.getWatched())
           .map((d) => (d.startsWith(ctx.root + sep) ? d.slice(ctx.root.length + 1) || "." : d))
           .sort();

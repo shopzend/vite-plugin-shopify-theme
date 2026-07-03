@@ -8,14 +8,10 @@
 
 Shopify 主题的 `.liquid` 不在 Vite 的模块图里，原生 HMR 触达不到；生产产物又得用 `asset_url` 引用。本插件把这两端缝起来，核心是一个**自动生成的 `snippets/vite-mixer.liquid`**：
 
-- **开发态** — snippet 写入指向本地 dev server 的 script 标签（首行 `/@vite/client`，再逐入口 `<script src="http://<host>:<port>/<entry>">`；主机名按实际监听地址推导，wildcard 监听写 LAN IP，手机/局域网可预览），并 `assign dev_mode = true`，配合 `shopify theme dev` 实现 HMR。
+- **开发态** — snippet 写入指向本地 dev server 的 script 标签（首行 `/@vite/client`，再逐入口 `<script src="http://<host>:<port>/<entry>">`；主机名按实际监听地址推导，wildcard 监听写 LAN IP，手机/局域网可预览），并 `assign dev_mode = true`，配合 `shopify theme dev` 实现 HMR。**退场恢复**：覆写前把盘上的生产形态备份为同目录 `<snippet 名>.bak.liquid`（保持 `.liquid` 后缀，Shopify 只接受 `snippets/*.liquid`），dev server 关闭（Ctrl+C / SIGTERM / `server.restart()`）时写回——snippet 被 git 跟踪（如店铺走 GitHub 集成）时，工作区只在 dev 进程存活期间是脏的，平时 `git pull` 不受阻。备份落盘，进程崩溃后下次 dev 启动→退出会接续恢复。建议主题仓库把 `snippets/*.bak.liquid` 加进 `.gitignore`（免 status 噪音）与 `.shopifyignore`（免上传到店铺）。
 - **生产态** — `vite build` 时经 `generateBundle` 钩子直接读 bundle 元数据（entry chunk 的 `fileName` 与 `viteMetadata.importedCss`），把产物改写成 `asset_url` script + `stylesheet_tag` 写回 snippet，并 `assign dev_mode = false`。产物名固定无 hash（`[name].js` 扁平命名，缓存破除由 `asset_url` 的版本参数承担）；无需 manifest 文件中转（参见 [Vite: output bundle metadata](https://vite.dev/guide/api-plugin#output-bundle-metadata)）。
 
-`layout/theme.liquid` 添加：
-
-```liquid
-{% render 'vite-mixer' %}
-```
+`layout/theme.liquid` 的接入标签**由插件自动注入**：dev 启动 / `vite build` 时若发现该文件没有引用 mixer snippet，就在 `</head>` 前插入 `{% render 'vite-mixer' %}`（持久写入主题仓库——它是生产依赖，须随主题提交）。已有引用（包括自定义位置 / 条件分支内的写法，如 `request.design_mode` 分流）则原样保留，不做改动。
 
 ## 安装
 
@@ -61,9 +57,9 @@ vite build    # 生产：产物入 <theme>/assets，并改写注入 vite-mixer s
 | `shopify-theme:check`  | dev（`apply: 'serve'`） | 校验主题仓库 git 分支前缀（默认 `["dev"]`，任一命中即通过），不符即抛 `[shopify-theme]` 前缀错误阻断启动；`vite build` 不加载本插件 |
 | `shopify-theme:config` | dev + build             | `config` 钩子解析选项、填充 `Ctx`，注入 `build`：`outDir = <theme>/assets`、单入口 `vite-mixer`                                     |
 | `shopify-theme:reload` | dev（`apply: 'serve'`） | 复用 Vite 自带 `server.watcher` 监听主题源码目录，文件变更触发整页 `full-reload`（liquid 不走 HMR）                                 |
-| `shopify-theme:mixer`  | dev + build             | 生成 / 改写 `vite-mixer.liquid`：dev `configureServer` 写 dev script，build `generateBundle` 读 bundle 元数据写生产 tag             |
+| `shopify-theme:mixer`  | dev + build             | 生成 / 改写 `vite-mixer.liquid`：dev `configureServer` 写 dev script，build `generateBundle` 读 bundle 元数据写生产 tag；两态均确保 `layout/theme.liquid` 引用了 snippet（无引用时在 `</head>` 前注入 render 标签，已有引用不动） |
 
-`:reload` 默认监听的主题目录：`sections` `blocks` `snippets` `templates` `layout` `config` `locales` `assets`（`reload` 选项可追加，相对 root）。dev 下 Vite 不写 `outDir`，故 `assets` 纳入监听也不会触发 reload 循环；自生成的 mixer snippet 会被跳过，避免启动写入时多刷一次。
+`:reload` 默认监听的主题目录：`sections` `blocks` `snippets` `templates` `layout` `config` `locales` `assets`（`reload` 选项可追加，相对 root）。dev 下 Vite 不写 `outDir`，故 `assets` 纳入监听也不会触发 reload 循环；自生成的 mixer snippet 及其 `.bak.liquid` 退场恢复备份会被跳过，避免启动写入时多刷一次。
 
 ## 选项
 
