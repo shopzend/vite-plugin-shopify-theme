@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 供 publish.yml 以 job.uses 复用，作为发布前置门禁
+  workflow_call:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # 与 publish 同源：setup-vp 安装 Vite+、Node（默认最新 LTS），并自动 vp install
+      - uses: voidzero-dev/setup-vp@v1
+
+      - run: vp run typecheck
+      - run: vp run test
