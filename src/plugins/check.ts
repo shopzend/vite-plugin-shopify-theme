@@ -31,7 +31,7 @@ function checkGitBranch(repoPath: string, branches: string[]) {
 
 // 读取 HEAD 指向的分支名。定位 / IO / 格式问题统一抛 `[shopify-theme]` 前缀错误，
 // 不让裸 ENOENT 逃逸（非仓库 / worktree 时尤其难懂）。
-function currentBranch(repoPath: string): string {
+export function currentBranch(repoPath: string): string {
   const head = readFileSync(join(gitDir(repoPath), "HEAD"), "utf8").trim();
   // 形如 "ref: refs/heads/main"；分支名可含 "/"（如 dev/foo），故按前缀切片、不能 split。
   const refPrefix = "ref: refs/heads/";
@@ -44,7 +44,7 @@ function currentBranch(repoPath: string): string {
 
 // 定位真实 git 目录：.git 是目录则直接用；是文件则解析 "gitdir: <path>" 重定向
 //（linked worktree / submodule，path 可相对）。缺失 / 形态异常抛 `[shopify-theme]` 前缀错误。
-function gitDir(repoPath: string): string {
+export function gitDir(repoPath: string): string {
   const dotGit = join(repoPath, ".git");
   let isDir: boolean;
   try {

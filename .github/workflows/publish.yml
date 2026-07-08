@@ -11,7 +11,12 @@ permissions:
   id-token: write # 供 npm provenance 使用
 
 jobs:
+  # 质量门禁：typecheck + 单测（复用 ci.yml），不过不发布
+  check:
+    uses: ./.github/workflows/ci.yml
+
   publish:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

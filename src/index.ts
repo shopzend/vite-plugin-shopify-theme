@@ -23,9 +23,22 @@ const DEFAULTS = {
 // 标准 Shopify 主题接入 Vite 的一站式插件，返回一组 Vite 插件（Vite 自动展平）。
 // 只管主题接入机制，不含 UI 库（Tailwind / UnoCSS …）——后者由宿主 vite.config 自行接入。
 // 用法：plugins: [shopifyTheme()]
+// 选项归一：逐字段 ?? 兜底，显式传 undefined（如 `reload: cond ? [...] : undefined`）视同缺省，
+// 不会击穿默认值——spread 合并做不到这点（undefined 会覆盖默认项）。
+export function resolveOptions(options: ShopifyThemeOptions): ResolvedOptions {
+  return {
+    ...options,
+    snippet: options.snippet ?? DEFAULTS.snippet,
+    devBranches: options.devBranches ?? DEFAULTS.devBranches,
+    worktree: options.worktree ?? DEFAULTS.worktree,
+    reload: options.reload ?? DEFAULTS.reload,
+    debug: options.debug ?? DEFAULTS.debug,
+  };
+}
+
 export default function shopifyTheme(options: ShopifyThemeOptions = {}): PluginOption[] {
   const ctx = {} as Ctx;
-  const opts: ResolvedOptions = { ...DEFAULTS, ...options };
+  const opts = resolveOptions(options);
   setDebug(opts.debug);
 
   // 统一签名 (ctx, opts)。config 须最先：它在 config 钩子填满 Ctx，其余插件的后续钩子才读得到

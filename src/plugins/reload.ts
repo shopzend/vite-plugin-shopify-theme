@@ -46,15 +46,10 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
         pending = [];
       };
 
+      const scope = { themeDir, vitifyDir, extraDirs, snippet: ctx.snippet };
       const onChange = (file: string) => {
         const f = normalize(file);
-        // 共享 watcher 的事件覆盖整个 root，这层前缀过滤把 reload 限定在主题源码内；
-        // + sep 按目录边界匹配，themePath 不误命中 theme-foo。
-        const inTheme = f.startsWith(themeDir + sep) && !f.startsWith(vitifyDir + sep);
-        const inExtra = extraDirs.some((d) => f.startsWith(d + sep));
-        if (!inTheme && !inExtra) return;
-        // 跳过自己生成的 mixer snippet，避免启动写入时多刷新一次。
-        if (f.endsWith(`${sep}${ctx.snippet}`)) return;
+        if (!shouldReload(f, scope)) return;
         pending.push(f);
         clearTimeout(timer);
         timer = setTimeout(flush, DEBOUNCE_MS);
@@ -76,4 +71,18 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
       });
     },
   };
+}
+
+// 一次文件事件是否应触发整页刷新（纯函数，file 与各目录均已 normalize）：
+// 共享 watcher 的事件覆盖整个 root，这层前缀过滤把 reload 限定在主题源码
+//（.vitify 除外——由 HMR 接管）或额外目录内；+ sep 按目录边界匹配，themePath
+// 不误命中 theme-foo。自生成的 mixer snippet 跳过，避免启动写入时多刷新一次。
+export function shouldReload(
+  file: string,
+  scope: { themeDir: string; vitifyDir: string; extraDirs: string[]; snippet: string },
+): boolean {
+  const inTheme = file.startsWith(scope.themeDir + sep) && !file.startsWith(scope.vitifyDir + sep);
+  const inExtra = scope.extraDirs.some((d) => file.startsWith(d + sep));
+  if (!inTheme && !inExtra) return false;
+  return !file.endsWith(`${sep}${scope.snippet}`);
 }

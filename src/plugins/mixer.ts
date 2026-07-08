@@ -113,12 +113,12 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
 }
 
 // snippet 文件名 → render 标签用的 snippet 名（去 .liquid 后缀）
-function renderName(snippet: string): string {
+export function renderName(snippet: string): string {
   return snippet.replace(/\.liquid$/, "");
 }
 
 // 转义正则元字符，snippet 名可经选项自定义，不能直接拼进 RegExp
-function escapeRegExp(s: string): string {
+export function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
@@ -146,17 +146,21 @@ const VIRTUAL_IFACE =
 // - 未知 / 回环 → localhost
 // - wildcard（0.0.0.0 / ::）→ 物理网卡 IPv4（en0 优先，LAN / 手机可达），找不到回退 localhost
 // - 具体地址 → 原样使用
-function devHost(address: string | undefined): string {
+// ifaces 可注入（测试用），缺省读真实网卡。
+export function devHost(
+  address: string | undefined,
+  ifaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
+): string {
   if (!address || address === "127.0.0.1" || address === "::1") return "localhost";
   if (address !== "0.0.0.0" && address !== "::") return address;
-  return lanIPv4() ?? "localhost";
+  return pickLanIPv4(ifaces) ?? "localhost";
 }
 
 // 选局域网可达的 IPv4：先排除隧道 / 虚拟网卡，再按 en0 > 其他 en* / eth* > 余下排序。
 // macOS 上 VPN 的 utun 常排在 en0 之前，朴素「取第一个非内部 IPv4」会误选其 172.x 地址。
-function lanIPv4(): string | undefined {
+export function pickLanIPv4(ifaces: ReturnType<typeof networkInterfaces>): string | undefined {
   const candidates: { name: string; address: string }[] = [];
-  for (const [name, infos] of Object.entries(networkInterfaces())) {
+  for (const [name, infos] of Object.entries(ifaces)) {
     if (VIRTUAL_IFACE.test(name)) continue;
     for (const info of infos ?? []) {
       if (info.family === "IPv4" && !info.internal) candidates.push({ name, address: info.address });

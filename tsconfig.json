@@ -10,5 +10,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src", "build.config.ts"]
+  "include": ["src", "test", "build.config.ts", "vitest.config.ts"]
 }
