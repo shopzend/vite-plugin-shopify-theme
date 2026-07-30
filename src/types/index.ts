@@ -33,11 +33,22 @@ export interface ShopifyThemeOptions {
    *（如想交给 `shopify theme dev` 自带的 live reload——两套机制同开会双重刷新）
    */
   reload?: string[] | false;
+  /**
+   * dev snippet 里 script 地址用的主机名（端口恒取 dev server 实际监听端口）；
+   * 默认 "127.0.0.1"。传 "auto" 由监听地址推导（wildcard 时取物理网卡 LAN IPv4，
+   * 供手机 / 局域网预览）；传其他值原样使用（LAN IP、隧道域名等）。
+   */
+  devHost?: string;
   /** 开启 debug 日志；默认 false（经参数传入，不读 process.env） */
   debug?: boolean;
 }
 
-// 工厂合并 DEFAULTS 后的选项：被默认值覆盖的字段（snippet / devBranches / worktree / reload / debug）
-// 转为必有，其余仍可选。统一传给各子插件按需取用（见 ../index.ts）。
+// 工厂合并 DEFAULTS 后的选项：被默认值覆盖的字段（snippet / devBranches / worktree / reload /
+// devHost / debug）转为必有，其余仍可选。统一传给各子插件按需取用（见 ../index.ts）。
 export type ResolvedOptions = ShopifyThemeOptions &
-  Required<Pick<ShopifyThemeOptions, "snippet" | "devBranches" | "worktree" | "reload" | "debug">>;
+  Required<
+    Pick<
+      ShopifyThemeOptions,
+      "snippet" | "devBranches" | "worktree" | "reload" | "devHost" | "debug"
+    >
+  >;

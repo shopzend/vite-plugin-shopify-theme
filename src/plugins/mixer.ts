@@ -15,8 +15,7 @@ const viteTagDisclaimer =
 // - build（generateBundle）：读 entry chunk 的 viteMetadata，改写为生产 asset_url /
 //   stylesheet_tag；无需 manifest 中转。参见
 //   https://vite.dev/guide/api-plugin#output-bundle-metadata
-// opts 暂未用到（所需事实都在 Ctx 里），故以 `_` 标记。
-export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
+export default function mixer(ctx: Ctx, opts: ResolvedOptions): Plugin {
   // 惰性求值：ctx 由 :config 的 config 钩子填充，工厂运行时尚未就绪。
   const snippetsPath = () => resolve(ctx.themePath, "snippets");
   const snippetViteMixer = () => resolve(snippetsPath(), ctx.snippet);
@@ -40,7 +39,9 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
   const ensureRenderTag = (): void => {
     const layout = resolve(ctx.themePath, "layout", "theme.liquid");
     if (!existsSync(layout)) {
-      log.error(`layout/theme.liquid not found; add {% render '${renderName(ctx.snippet)}' %} manually`);
+      log.error(
+        `layout/theme.liquid not found; add {% render '${renderName(ctx.snippet)}' %} manually`,
+      );
       return;
     }
     const name = renderName(ctx.snippet);
@@ -57,7 +58,9 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
     }
     writeFileSync(
       layout,
-      content.slice(0, head.index) + `${head[1]}  {% render '${name}' %}\n` + content.slice(head.index),
+      content.slice(0, head.index) +
+        `${head[1]}  {% render '${name}' %}\n` +
+        content.slice(head.index),
     );
     log.info(`injected {% render '${name}' %} into layout/theme.liquid`);
   };
@@ -71,11 +74,16 @@ export default function mixer(ctx: Ctx, _opts: ResolvedOptions): Plugin {
 
       server.httpServer?.once("listening", () => {
         log.debug("dev server", server.httpServer?.address());
-        // 端口、主机名都取自实际监听地址：端口源自 vite.config 的 server.port；
-        // 主机名见 devHost（wildcard 时取 LAN IP，便于手机 / 局域网预览）。
+        // 端口恒取实际监听地址（源自 vite.config 的 server.port，未指定则 Vite 自动选）。
+        // 主机名由 devHost 选项定：默认 "127.0.0.1"（server.host 设成 wildcard 时也不外泄
+        // 到 LAN IP——内嵌浏览器 / 代理常访问不了 LAN 地址）；"auto" 才按监听地址推导
+        // （见 autoDevHost，wildcard 时取 LAN IP，便于手机 / 局域网预览）；其余值原样使用。
         const addr = server.httpServer?.address();
         const port = addr && typeof addr === "object" ? addr.port : server.config.server.port;
-        const host = devHost(addr && typeof addr === "object" ? addr.address : undefined);
+        const host =
+          opts.devHost === "auto"
+            ? autoDevHost(addr && typeof addr === "object" ? addr.address : undefined)
+            : opts.devHost;
         const origin = `http://${host}:${port}`;
 
         // 单入口（ctx.entry，已是 root 相对、正斜杠），dev script 直接用；多入口待 entry 收多值。
@@ -142,12 +150,12 @@ function devScriptTag(origin: string, path: string): string {
 const VIRTUAL_IFACE =
   /^(utun|awdl|llw|bridge|docker|br-|veth|tun|tap|vboxnet|vmnet|vmenet|gif|stf|ap\d|zt|tailscale|wg|ipsec|ppp)/i;
 
-// 由监听地址推导 dev URL 主机名：
+// 由监听地址推导 dev URL 主机名（仅 devHost: "auto" 走这条）：
 // - 未知 / 回环 → localhost
 // - wildcard（0.0.0.0 / ::）→ 物理网卡 IPv4（en0 优先，LAN / 手机可达），找不到回退 localhost
 // - 具体地址 → 原样使用
 // ifaces 可注入（测试用），缺省读真实网卡。
-export function devHost(
+export function autoDevHost(
   address: string | undefined,
   ifaces: ReturnType<typeof networkInterfaces> = networkInterfaces(),
 ): string {
@@ -163,7 +171,8 @@ export function pickLanIPv4(ifaces: ReturnType<typeof networkInterfaces>): strin
   for (const [name, infos] of Object.entries(ifaces)) {
     if (VIRTUAL_IFACE.test(name)) continue;
     for (const info of infos ?? []) {
-      if (info.family === "IPv4" && !info.internal) candidates.push({ name, address: info.address });
+      if (info.family === "IPv4" && !info.internal)
+        candidates.push({ name, address: info.address });
     }
   }
   const rank = (name: string): number =>

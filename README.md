@@ -8,7 +8,7 @@
 
 Shopify 主题的 `.liquid` 不在 Vite 模块图里，原生 HMR 触达不到；生产产物又得用 `asset_url` 引用。本插件用一个**自动生成的 `snippets/vite-mixer.liquid`** 把两端缝起来：
 
-- **开发态** — snippet 写入指向本地 dev server 的 script 标签（首行 `/@vite/client`，再逐入口 `<script src="http://<host>:<port>/<entry>">`；主机名按实际监听地址推导，wildcard 监听写 LAN IP，手机/局域网可预览），配合 `shopify theme dev` 即得 HMR。写入幂等：内容未变不落盘，避免 mtime 变化触发 `shopify theme dev` 重传。
+- **开发态** — snippet 写入指向本地 dev server 的 script 标签（首行 `/@vite/client`，再逐入口 `<script src="http://<host>:<port>/<entry>">`；主机名默认 `127.0.0.1`，可用 `devHost` 选项改成 LAN IP / 隧道域名，或设 `"auto"` 按监听地址推导；端口恒取实际监听端口），配合 `shopify theme dev` 即得 HMR。写入幂等：内容未变不落盘，避免 mtime 变化触发 `shopify theme dev` 重传。
 - **git 免打扰** — snippet 被 git 跟踪时（店铺走 GitHub 集成则必须跟踪），dev 启动自动 `git update-index --skip-worktree`，开发形态的覆写对 git 隐身：`git status` 不脏、`git add -A` 静默跳过、显式 `git add` 被拒绝。标志持久生效（存 index），解除：`git update-index --no-skip-worktree -- snippets/vite-mixer.liquid`，或把 `worktree` 选项设为 `"no-skip"` 跑一次 dev；`"off"` 则完全不动 git。未跟踪的 snippet 自动跳过。
 - **生产态** — `vite build` 经 `generateBundle` 钩子直接读 bundle 元数据（entry chunk 的 `fileName` 与 `viteMetadata.importedCss`），把产物改写成 `asset_url` script + `stylesheet_tag` 写回 snippet。产物名固定无 hash（`[name].js` 扁平命名，缓存破除由 `asset_url` 的版本参数承担），无需 manifest 文件中转（参见 [Vite: output bundle metadata](https://vite.dev/guide/api-plugin#output-bundle-metadata)）。
 - **自动接入** — dev 启动 / build 时若发现 `layout/theme.liquid` 未引用 mixer snippet，就在 `</head>` 前插入 `{% render 'vite-mixer' %}`（持久写入主题仓库——它是生产依赖，须随主题提交）；已有引用（含自定义位置 / 条件分支内的写法，如 `request.design_mode` 分流）原样保留。
@@ -120,6 +120,7 @@ shopifyTheme(options?: ShopifyThemeOptions)
 | `devBranches` | `string[] \| false`            | `["dev"]`             | dev 下要求主题仓库分支以列表中任一前缀开头；传 `false` 关闭校验                                                                                                                                                        |
 | `worktree`    | `"skip" \| "no-skip" \| "off"` | `"skip"`              | dev 下 mixer snippet 的 git `skip-worktree` 位策略：`"skip"` 启动时打标（本地变动对 git 隐身）、`"no-skip"` 启动时解除标志、`"off"` 不动 git                                                                           |
 | `reload`      | `string[] \| false`            | `[]`                  | 额外触发整页 reload 的目录（相对 `root`，用于 `themePath` 之外的目录）；传 `false` 整体关闭本插件的整页刷新——**与 `shopify theme dev` 并行时的推荐值**，热刷新交给 CLI（见「与 Shopify CLI 自带 live reload 的关系」） |
+| `devHost`     | `string`                       | `"127.0.0.1"`         | dev snippet 里 script 地址的主机名（端口恒取实际监听端口）：默认 `"127.0.0.1"`；`"auto"` 按监听地址推导（wildcard 时取物理网卡 LAN IPv4，供手机 / 局域网预览）；其余值原样使用（LAN IP、隧道域名等）                   |
 | `debug`       | `boolean`                      | `false`               | 开启 debug 日志（原由 `DEBUG` 环境变量控制，现经参数传入）                                                                                                                                                             |
 
 ## 环境变量

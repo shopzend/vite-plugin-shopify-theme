@@ -8,6 +8,7 @@ describe("resolveOptions", () => {
       devBranches: ["dev"],
       worktree: "skip",
       reload: [],
+      devHost: "127.0.0.1",
       debug: false,
     });
   });
@@ -20,12 +21,14 @@ describe("resolveOptions", () => {
       devBranches: undefined,
       worktree: undefined,
       reload: undefined,
+      devHost: undefined,
       debug: undefined,
     });
     expect(opts.snippet).toBe("vite-mixer.liquid");
     expect(opts.devBranches).toEqual(["dev"]);
     expect(opts.worktree).toBe("skip");
     expect(opts.reload).toEqual([]);
+    expect(opts.devHost).toBe("127.0.0.1");
     expect(opts.debug).toBe(false);
   });
 
@@ -41,6 +44,7 @@ describe("resolveOptions", () => {
       entry: "src/main.ts",
       snippet: "custom.liquid",
       worktree: "off",
+      devHost: "auto",
       debug: true,
     });
     expect(opts).toMatchObject({
@@ -48,6 +52,7 @@ describe("resolveOptions", () => {
       entry: "src/main.ts",
       snippet: "custom.liquid",
       worktree: "off",
+      devHost: "auto",
       debug: true,
     });
   });

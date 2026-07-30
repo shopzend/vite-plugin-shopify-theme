@@ -17,6 +17,7 @@ const DEFAULTS = {
   devBranches: ["dev"],
   worktree: "skip",
   reload: [],
+  devHost: "127.0.0.1",
   debug: false,
 } satisfies Partial<ShopifyThemeOptions>;
 
@@ -32,6 +33,7 @@ export function resolveOptions(options: ShopifyThemeOptions): ResolvedOptions {
     devBranches: options.devBranches ?? DEFAULTS.devBranches,
     worktree: options.worktree ?? DEFAULTS.worktree,
     reload: options.reload ?? DEFAULTS.reload,
+    devHost: options.devHost ?? DEFAULTS.devHost,
     debug: options.debug ?? DEFAULTS.debug,
   };
 }
