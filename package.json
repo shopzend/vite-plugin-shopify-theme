@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-shopify-theme",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Wire a standard Shopify theme into Vite — HMR dev server + production bundle-metadata→snippet injection.",
   "keywords": [
     "hmr",
