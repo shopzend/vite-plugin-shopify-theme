@@ -39,16 +39,22 @@ export interface ShopifyThemeOptions {
    * 供手机 / 局域网预览）；传其他值原样使用（LAN IP、隧道域名等）。
    */
   devHost?: string;
+  /**
+   * dev 启动时清点本机的 `shopify theme dev` / `shopify app dev`，超过此数即告警并列出。
+   * 默认 1（只容许本次自己那个）；传 false 关闭检查。
+   * 多个 dev 进程共享同一账号的 API 配额，会拖慢预览甚至触发 429/502。
+   */
+  maxDevProcesses?: number | false;
   /** 开启 debug 日志；默认 false（经参数传入，不读 process.env） */
   debug?: boolean;
 }
 
 // 工厂合并 DEFAULTS 后的选项：被默认值覆盖的字段（snippet / devBranches / worktree / reload /
-// devHost / debug）转为必有，其余仍可选。统一传给各子插件按需取用（见 ../index.ts）。
+// devHost / maxDevProcesses / debug）转为必有，其余仍可选。统一传给各子插件按需取用（见 ../index.ts）。
 export type ResolvedOptions = ShopifyThemeOptions &
   Required<
     Pick<
       ShopifyThemeOptions,
-      "snippet" | "devBranches" | "worktree" | "reload" | "devHost" | "debug"
+      "snippet" | "devBranches" | "worktree" | "reload" | "devHost" | "maxDevProcesses" | "debug"
     >
   >;

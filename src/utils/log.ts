@@ -31,7 +31,7 @@ function format(args: unknown[]): string {
     .join(" ");
 }
 
-// 按域返回一组 logger：debug 默认静默，info / error 始终可见，均经 Vite Logger 输出。
+// 按域返回一组 logger：debug 默认静默，info / warn / error 始终可见，均经 Vite Logger 输出。
 export function createLog(scope: string) {
   const tag = pc.dim(`[shopify-theme:${scope}]`);
   return {
@@ -41,6 +41,9 @@ export function createLog(scope: string) {
     },
     info(...args: unknown[]) {
       logger.info(`${tag} ${format(args)}`, { timestamp: true });
+    },
+    warn(...args: unknown[]) {
+      logger.warn(`${tag} ${format(args)}`, { timestamp: true });
     },
     error(...args: unknown[]) {
       logger.error(`${tag} ${format(args)}`, { timestamp: true });

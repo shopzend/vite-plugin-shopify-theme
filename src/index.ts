@@ -3,6 +3,7 @@ import type { PluginOption } from "vite";
 import type { Ctx, ResolvedOptions, ShopifyThemeOptions } from "./types";
 import config from "./plugins/config";
 import check from "./plugins/check";
+import concurrency from "./plugins/concurrency";
 import worktree from "./plugins/worktree";
 import reload from "./plugins/reload";
 import mixer from "./plugins/mixer";
@@ -18,6 +19,7 @@ const DEFAULTS = {
   worktree: "skip",
   reload: [],
   devHost: "127.0.0.1",
+  maxDevProcesses: 1,
   debug: false,
 } satisfies Partial<ShopifyThemeOptions>;
 
@@ -34,6 +36,7 @@ export function resolveOptions(options: ShopifyThemeOptions): ResolvedOptions {
     worktree: options.worktree ?? DEFAULTS.worktree,
     reload: options.reload ?? DEFAULTS.reload,
     devHost: options.devHost ?? DEFAULTS.devHost,
+    maxDevProcesses: options.maxDevProcesses ?? DEFAULTS.maxDevProcesses,
     debug: options.debug ?? DEFAULTS.debug,
   };
 }
@@ -48,6 +51,7 @@ export default function shopifyTheme(options: ShopifyThemeOptions = {}): PluginO
   return [
     config(ctx, opts),
     check(ctx, opts),
+    concurrency(ctx, opts),
     worktree(ctx, opts),
     reload(ctx, opts),
     mixer(ctx, opts),
