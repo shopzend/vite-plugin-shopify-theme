@@ -51,27 +51,40 @@ vite build    # 生产：产物入 <theme>/assets，并改写注入 vite-mixer s
 
 `shopifyTheme()` 返回的一组插件（按顺序）：
 
-| 插件                   | 生效阶段                | 作用                                                                                                                                |
-| ---------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `shopify-theme:check`  | dev（`apply: 'serve'`） | 校验主题仓库 git 分支前缀（默认 `["dev"]`，任一命中即通过），不符即抛 `[shopify-theme]` 前缀错误阻断启动；`vite build` 不加载本插件 |
-| `shopify-theme:config` | dev + build             | `config` 钩子解析选项、填充 `Ctx`，注入 `build`：`outDir = <theme>/assets`、单入口 `vite-mixer`                                     |
+| 插件                     | 生效阶段                | 作用                                                                                                                                                                                                                                                |
+| ------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `shopify-theme:check`    | dev（`apply: 'serve'`） | 校验主题仓库 git 分支前缀（默认 `["dev"]`，任一命中即通过），不符即抛 `[shopify-theme]` 前缀错误阻断启动；`vite build` 不加载本插件                                                                                                                 |
+| `shopify-theme:config`   | dev + build             | `config` 钩子解析选项、填充 `Ctx`，注入 `build`：`outDir = <theme>/assets`、单入口 `vite-mixer`                                                                                                                                                     |
 | `shopify-theme:worktree` | dev（`apply: 'serve'`） | 按 `worktree` 选项管理 mixer snippet 的 `skip-worktree` 位：`"skip"`（默认）打标让 git 忽略其本地变动，`"no-skip"` 解除标志，`"off"` 不动 git；未跟踪则跳过，失败仅告警不阻断 dev。build 不加载：CI 改写生产形态后要落地提交，带标志 git 看不见改动 |
-| `shopify-theme:reload` | dev（`apply: 'serve'`） | 复用 Vite 自带 `server.watcher` 监听主题源码目录，文件变更触发整页 `full-reload`（liquid 不走 HMR）                                 |
-| `shopify-theme:mixer`  | dev + build             | 生成 / 改写 `vite-mixer.liquid`：dev `configureServer` 写 dev script，build `generateBundle` 写生产 tag；两态均确保 `layout/theme.liquid` 引用了 snippet（见上「自动接入」） |
+| `shopify-theme:reload`   | dev（`apply: 'serve'`） | 复用 Vite 自带 `server.watcher` 监听主题源码目录，文件变更触发整页 `full-reload`（liquid 不走 HMR）。与 `shopify theme dev` 自带的热刷新重叠，**并行跑 CLI 时建议 `reload: false` 关掉**（见下）                                                    |
+| `shopify-theme:mixer`    | dev + build             | 生成 / 改写 `vite-mixer.liquid`：dev `configureServer` 写 dev script，build `generateBundle` 写生产 tag；两态均确保 `layout/theme.liquid` 引用了 snippet（见上「自动接入」）                                                                        |
 
-`:reload` 默认监听的主题目录：`sections` `blocks` `snippets` `templates` `layout` `config` `locales` `assets`（`reload` 选项可追加，相对 root）。dev 下 Vite 不写 `outDir`，故 `assets` 纳入监听也不会触发 reload 循环；自生成的 mixer snippet 会被跳过，避免启动写入时多刷一次。变更在 100ms 窗口内防抖合并（git checkout / 多文件保存只刷一次）。
+`:reload` 的监听范围是**整个 `themePath` 前缀**（不是逐子目录白名单），两处挖掉：`.vitify/`（该目录在 Vite 模块图内，由 HMR 接管，纳入会 HMR + full-reload 双触发）与自生成的 mixer snippet（避免启动写入时多刷一次）。`reload` 选项传数组可追加 `themePath` **之外**的目录（相对 root）。dev 下 Vite 不写 `outDir`，故 `assets` 落在前缀内也不会触发 reload 循环。变更在 100ms 窗口内防抖合并（git checkout / 多文件保存只刷一次）。
 
-> **与 Shopify CLI 自带 live reload 的关系**：`shopify theme dev` 默认也注入自己的热刷新，与 `:reload` 属两套独立机制，同开会双重刷新；且 `:reload` 在本地文件变更瞬间触发，早于 CLI 把变更同步到店铺，过早刷新可能拿到旧页面。二选一：CLI 传 `--live-reload off` 全交本插件，或 `reload: false` 关掉本插件、交给 CLI。
+### 与 Shopify CLI 自带 live reload 的关系
+
+`shopify theme dev` 默认注入自己的热刷新客户端（`theme-hot-reload.js`，由 CLI 的本地代理服务下发），与 `:reload` 属两套独立机制，同开则一次保存刷两次。
+
+**并行跑 CLI 时的推荐配置：`reload: false`，热刷新全交 CLI。** 两条理由：
+
+- **粒度**：CLI 的 `--live-reload` 默认 `hot-reload`，对 CSS 与 sections 做局部热替换（另有 `full-page` / `off` 两档）；`:reload` 只有整页一档。同一次 CSS 保存下，`:reload` 的整页刷会把 CLI 本可保留的页面状态（打开的抽屉、筛选面板、轮播位置）冲掉——此时它是净损失，不是冗余。
+- **时序**：`:reload` 在本地文件落盘瞬间触发，早于 CLI 把变更上传到店铺，过早刷新可能拿到店铺侧的旧页面，随后 CLI 再刷一次才正确。
+
+关掉 `:reload` 不影响 Vite HMR：`src/**` 与 `<theme>/.vitify/**` 走模块图，dev 态资源由 mixer snippet 指向本地 dev server，CLI 完全触达不到——这部分职责本就不重叠。
+
+反向组合（CLI 传 `--live-reload off`，热刷新全交本插件）也能做到单一来源，但会丢掉 CSS / section 局部替换，仅在 CLI 的局部替换实际出问题时才值得考虑。
+
+`reload` 传数组的场景与上述二选一无关：那是给 `themePath` **之外**的目录用的（如主题外的 liquid 生成源），CLI 的 watcher 看不见它们。
 
 ## 推荐 git 工作流（主题仓库）
 
 mixer snippet 被 git 跟踪时（店铺走 GitHub 集成则必须跟踪），推荐主题仓库用三分支单向环流，与本插件的机制正好咬合：
 
-| 分支   | 角色                                                                                                              | `vite-mixer.liquid` |
-| ------ | ----------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `main` | Shopify GitHub 集成绑定分支 = 店铺真源；Theme Editor 的改动（`settings_data.json`、`templates/*.json` 等）由 Shopify 自动 commit 到此 | 生产形态            |
-| `test` | CI 分支：跑 `vite build` 与检查，产物（`assets/` + 改写后的 mixer snippet）在此落地提交                              | 生产形态            |
-| `dev`  | 日常开发：dev server 只在此运行（`:check` 默认放行 `dev` 前缀分支，即为此模型设计）                                   | 入库恒为生产形态；dev 启动自动打 `skip-worktree` 位，工作区的开发形态对 git 隐身 |
+| 分支   | 角色                                                                                                                                  | `vite-mixer.liquid`                                                              |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `main` | Shopify GitHub 集成绑定分支 = 店铺真源；Theme Editor 的改动（`settings_data.json`、`templates/*.json` 等）由 Shopify 自动 commit 到此 | 生产形态                                                                         |
+| `test` | CI 分支：跑 `vite build` 与检查，产物（`assets/` + 改写后的 mixer snippet）在此落地提交                                               | 生产形态                                                                         |
+| `dev`  | 日常开发：dev server 只在此运行（`:check` 默认放行 `dev` 前缀分支，即为此模型设计）                                                   | 入库恒为生产形态；dev 启动自动打 `skip-worktree` 位，工作区的开发形态对 git 隐身 |
 
 **同步方向**：下行 `main` →merge→ `test` →merge→ `dev`（编辑器改动回流开发，要勤做——JSON 文件两头都会动）；上行 `dev` →merge→ `test`（CI 构建、提交产物）→merge→ `main`（GitHub 集成自动同步到店铺；push 前先 pull，Shopify 集成随时可能往 `main` 提交）。
 
@@ -99,15 +112,15 @@ git checkout -- snippets/vite-mixer.liquid
 shopifyTheme(options?: ShopifyThemeOptions)
 ```
 
-| 选项          | 类型                | 默认                  | 说明                                                                      |
-| ------------- | ------------------- | --------------------- | ------------------------------------------------------------------------- |
-| `themePath`   | `string`            | —（必填）             | 主题目录绝对路径（如 `resolve("theme-frame")`，宿主自行拼好）。缺失即抛错 |
-| `entry`       | `string`            | —（必填）             | 入口（相对 Vite `root`，如 `src/assets/main.ts`）。缺失即抛错             |
-| `snippet`     | `string`            | `"vite-mixer.liquid"` | 生成的 mixer snippet 文件名                                               |
-| `devBranches` | `string[] \| false` | `["dev"]`             | dev 下要求主题仓库分支以列表中任一前缀开头；传 `false` 关闭校验           |
-| `worktree`    | `"skip" \| "no-skip" \| "off"` | `"skip"`   | dev 下 mixer snippet 的 git `skip-worktree` 位策略：`"skip"` 启动时打标（本地变动对 git 隐身）、`"no-skip"` 启动时解除标志、`"off"` 不动 git |
-| `reload`      | `string[] \| false` | `[]`                  | 额外触发整页 reload 的目录（相对 `root`）；传 `false` 整体关闭整页刷新（交给 CLI 的 live reload） |
-| `debug`       | `boolean`           | `false`               | 开启 debug 日志（原由 `DEBUG` 环境变量控制，现经参数传入）                |
+| 选项          | 类型                           | 默认                  | 说明                                                                                                                                                                                                                   |
+| ------------- | ------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `themePath`   | `string`                       | —（必填）             | 主题目录绝对路径（如 `resolve("theme-frame")`，宿主自行拼好）。缺失即抛错                                                                                                                                              |
+| `entry`       | `string`                       | —（必填）             | 入口（相对 Vite `root`，如 `src/assets/main.ts`）。缺失即抛错                                                                                                                                                          |
+| `snippet`     | `string`                       | `"vite-mixer.liquid"` | 生成的 mixer snippet 文件名                                                                                                                                                                                            |
+| `devBranches` | `string[] \| false`            | `["dev"]`             | dev 下要求主题仓库分支以列表中任一前缀开头；传 `false` 关闭校验                                                                                                                                                        |
+| `worktree`    | `"skip" \| "no-skip" \| "off"` | `"skip"`              | dev 下 mixer snippet 的 git `skip-worktree` 位策略：`"skip"` 启动时打标（本地变动对 git 隐身）、`"no-skip"` 启动时解除标志、`"off"` 不动 git                                                                           |
+| `reload`      | `string[] \| false`            | `[]`                  | 额外触发整页 reload 的目录（相对 `root`，用于 `themePath` 之外的目录）；传 `false` 整体关闭本插件的整页刷新——**与 `shopify theme dev` 并行时的推荐值**，热刷新交给 CLI（见「与 Shopify CLI 自带 live reload 的关系」） |
+| `debug`       | `boolean`                      | `false`               | 开启 debug 日志（原由 `DEBUG` 环境变量控制，现经参数传入）                                                                                                                                                             |
 
 ## 环境变量
 
