@@ -9,7 +9,7 @@
 Shopify 主题的 `.liquid` 不在 Vite 模块图里，原生 HMR 触达不到；生产产物又得用 `asset_url` 引用。本插件用一个**自动生成的 `snippets/vite-mixer.liquid`** 把两端缝起来：
 
 - **开发态** — snippet 写入指向本地 dev server 的 script 标签（首行 `/@vite/client`，再逐入口 `<script src="http://<host>:<port>/<entry>">`；主机名默认 `127.0.0.1`，可用 `devHost` 选项改成 LAN IP / 隧道域名，或设 `"auto"` 按监听地址推导；端口恒取实际监听端口），配合 `shopify theme dev` 即得 HMR。写入幂等：内容未变不落盘，避免 mtime 变化触发 `shopify theme dev` 重传。
-- **git 免打扰** — snippet 被 git 跟踪时（店铺走 GitHub 集成则必须跟踪），dev 启动自动 `git update-index --skip-worktree`，开发形态的覆写对 git 隐身：`git status` 不脏、`git add -A` 静默跳过、显式 `git add` 被拒绝。标志持久生效（存 index），解除：`git update-index --no-skip-worktree -- snippets/vite-mixer.liquid`，或把 `worktree` 选项设为 `"no-skip"` 跑一次 dev；`"off"` 则完全不动 git。未跟踪的 snippet 自动跳过。
+- **git 免打扰** — snippet 被 git 跟踪时（店铺走 GitHub 集成则必须跟踪），dev 启动自动 `git update-index --skip-worktree`，开发形态的覆写对 git 隐身：`git status` 不脏、`git add -A` 静默跳过、显式 `git add` 被拒绝。标志持久生效（存 index），解除：`shopify-theme-mixer unskip`（随包 bin，见「CLI」），或把 `worktree` 选项设为 `"no-skip"` 跑一次 dev；`"off"` 则完全不动 git。未跟踪的 snippet 自动跳过。
 - **生产态** — `vite build` 经 `generateBundle` 钩子直接读 bundle 元数据（entry chunk 的 `fileName` 与 `viteMetadata.importedCss`），把产物改写成 `asset_url` script + `stylesheet_tag` 写回 snippet。产物名固定无 hash（`[name].js` 扁平命名，缓存破除由 `asset_url` 的版本参数承担），无需 manifest 文件中转（参见 [Vite: output bundle metadata](https://vite.dev/guide/api-plugin#output-bundle-metadata)）。
 - **自动接入** — dev 启动 / build 时若发现 `layout/theme.liquid` 未引用 mixer snippet，就在 `</head>` 前插入 `{% render 'vite-mixer' %}`（持久写入主题仓库——它是生产依赖，须随主题提交）；已有引用（含自定义位置 / 条件分支内的写法，如 `request.design_mode` 分流）原样保留。
 
@@ -107,6 +107,19 @@ vite build    # 生产：产物入 <theme>/assets，并改写注入 vite-mixer s
 
 判定用 `ps -axo pid=,etime=,args=`，要求 `shopify` 出现在行首或路径尾段且紧跟 `theme dev` / `app dev`。**不能**放宽成「命令行里同时含 `shopify` 和 `theme dev`」——那会把 `concurrently … "shopify theme dev --path X"` 这个启动器算进去（与它派生的真 CLI 进程重复计数），仓库目录名恰好含 `shopify` 时也会误报；两者本机实测都中过招。`theme push` / `theme check` 天然不匹配。
 
+## CLI：`shopify-theme-mixer`
+
+skip-worktree 是一次性的 git index 操作，不该逼人起一次 dev server 或手拼 git 命令——随包 bin `shopify-theme-mixer` 提供一步到位的入口。与插件同一原则：不读 `process.env`，主题目录经 `--theme` 显式传（缺省当前目录）：
+
+```bash
+shopify-theme-mixer status  --theme theme-frame   # 跟踪 / 标志状态 + 当前形态（dev / prod）
+shopify-theme-mixer skip    --theme theme-frame   # 打标（等价 dev 启动时 worktree: "skip" 的动作）
+shopify-theme-mixer unskip  --theme theme-frame   # 解除标志，恢复 git 对该文件的跟踪
+shopify-theme-mixer restore --theme theme-frame   # 解除标志 + 检出入库版本（丢弃开发形态覆写）
+```
+
+snippet 文件名非默认时加 `--snippet <name>`。`status` 的形态判据与发布门禁一致：`asset_url` = 生产形态，`/@vite/client` = 开发形态——接手主题时可用它自查产物入库形态。
+
 ## 推荐 git 工作流（主题仓库）
 
 mixer snippet 被 git 跟踪时（店铺走 GitHub 集成则必须跟踪），推荐主题仓库用三分支单向环流，与本插件的机制正好咬合：
@@ -121,14 +134,20 @@ mixer snippet 被 git 跟踪时（店铺走 GitHub 集成则必须跟踪），�
 
 **不变量：mixer snippet 在 git 全分支恒为生产形态**。生产形态内容确定且稳定（产物名无 hash，入口不变则逐字节一致），故下行 merge 几乎不会触碰它；开发形态只存在于 dev 机的工作区，且被 `:worktree` 对 git 隐身——`git status` 不显示、`git add`（含 `-A`）不入暂存，提交代码无需任何绕行。
 
-**恢复与解除**：dev 退出后工作区保持开发形态（对 git 隐身，通常不用管）；要恢复生产形态，跑一次 `vite build`，或先解除标志再检出：
+**恢复与解除**：dev 退出后工作区保持开发形态（对 git 隐身，通常不用管）；要恢复生产形态，跑一次 `vite build`，或用随包 CLI 一步到位（见「CLI」）：
+
+```bash
+shopify-theme-mixer restore --theme <主题目录>   # 解除标志 + 检出入库版本
+```
+
+等价的手动命令（顺序敏感——带标志时 `git checkout -- <path>` 会报 "did not match any file(s) known to git"，必须先解除）：
 
 ```bash
 git update-index --no-skip-worktree -- snippets/vite-mixer.liquid
 git checkout -- snippets/vite-mixer.liquid
 ```
 
-注意带标志时 `git checkout -- <path>` 会报 "did not match any file(s) known to git"，必须先解除（手动命令，或把 `worktree` 选项设为 `"no-skip"` 跑一次 dev）。上游 pull 恰好要更新该文件时（罕见）同理：解除标志、恢复本地文件后再 pull——下次 dev 启动（`"skip"` 档）会自动重新打上。
+上游 pull 恰好要更新该文件时（罕见）同理：解除标志（`shopify-theme-mixer unskip`）、恢复本地文件后再 pull——下次 dev 启动（`"skip"` 档）会自动重新打上。
 
 **skip-worktree 的限制**（打上标志后要知道的事）：
 

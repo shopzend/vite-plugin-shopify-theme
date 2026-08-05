@@ -1,7 +1,7 @@
-import { execFileSync } from "node:child_process";
 import type { Plugin } from "vite";
 import type { Ctx, ResolvedOptions } from "../types";
 import { createLog } from "../utils/log";
+import { clearSkip, setSkip, skipState } from "../utils/worktree";
 
 const log = createLog("worktree");
 
@@ -12,6 +12,7 @@ const log = createLog("worktree");
 // - "no-skip"：启动时解除已打的标志（恢复 git 对它的跟踪），作为 "skip" 的退出通道。
 // - "off"：不做任何 git 操作。
 // build 不加载本插件：CI 构建改写生产形态后要落地提交，带标志 git 会看不见该改动。
+// 不起 dev 的一次性操作（解除 / 恢复生产形态）走 CLI：`shopify-theme-mixer`（src/cli.ts）。
 export default function worktree(ctx: Ctx, opts: ResolvedOptions): Plugin {
   return {
     name: "shopify-theme:worktree",
@@ -21,31 +22,26 @@ export default function worktree(ctx: Ctx, opts: ResolvedOptions): Plugin {
         log.debug("worktree: off; leaving git index untouched");
         return;
       }
-      // git pathspec 统一用正斜杠，跨平台一致。
       const rel = `snippets/${ctx.snippet}`;
-      const git = (...args: string[]): string =>
-        execFileSync("git", [...args, "--", rel], { cwd: ctx.themePath, encoding: "utf8" });
       try {
-        // ls-files -v 首列标记位：S = 已带 skip-worktree；空输出 = 未被跟踪，无需处理。
-        const tag = git("ls-files", "-v").trim();
-        if (!tag) {
+        const state = skipState(ctx.themePath, rel);
+        if (state === "untracked") {
           log.debug(`${rel} not tracked; nothing to do`);
           return;
         }
-        const flagged = tag.startsWith("S");
         if (opts.worktree === "skip") {
-          if (flagged) {
+          if (state === "flagged") {
             log.debug(`${rel} already skip-worktree`);
             return;
           }
-          git("update-index", "--skip-worktree");
-          log.info(`skip-worktree set on ${rel} (undo: git update-index --no-skip-worktree -- ${rel})`);
+          setSkip(ctx.themePath, rel);
+          log.info(`skip-worktree set on ${rel} (undo: shopify-theme-mixer unskip)`);
         } else {
-          if (!flagged) {
+          if (state !== "flagged") {
             log.debug(`${rel} has no skip-worktree flag; nothing to undo`);
             return;
           }
-          git("update-index", "--no-skip-worktree");
+          clearSkip(ctx.themePath, rel);
           log.info(`skip-worktree cleared on ${rel}`);
         }
       } catch (e) {
