@@ -27,7 +27,10 @@ export default function config(ctx: Ctx, opts: ResolvedOptions): Plugin {
         build: {
           outDir: join(themePath, "assets"),
           emptyOutDir: false,
-          minify: false,
+          // JS 构建期压缩：Shopify CDN 只自动 minify ES5 语法的 JS，现代 bundle 平台不兜底。
+          // CSS 相反：平台自动 minify，构建端不压，产物保持可读。
+          minify: true,
+          cssMinify: false,
           // 无需 manifest：:mixer 从 generateBundle 的 bundle 元数据直接读 entry/CSS。
           rolldownOptions: {
             input: { "vite-mixer": join(root, entry) },
