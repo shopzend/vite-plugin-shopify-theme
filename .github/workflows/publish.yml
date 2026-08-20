@@ -21,7 +21,7 @@ jobs:
       contents: read
       id-token: write # 供 npm provenance 使用
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # 版本门禁：package.json 里的 version 与 npm 已发布版本不同才继续发布。
       # main 的非版本提交仍跑 check，但会在此跳过 setup / build / publish。

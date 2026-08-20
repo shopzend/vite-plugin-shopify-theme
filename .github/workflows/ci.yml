@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # 与 publish 同源：setup-vp 安装 Vite+、Node（默认最新 LTS），并自动 vp install
       - uses: voidzero-dev/setup-vp@v1
