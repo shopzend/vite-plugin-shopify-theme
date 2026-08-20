@@ -58,9 +58,9 @@ framework plugins. The plugin does not parse project environment files or `shopi
 ## Theme Run CLI
 
 ```bash
-shopify-theme dev   --theme theme-frame --env example-test
+shopify-theme dev   --theme theme-frame --env development
 shopify-theme build --theme theme-frame
-shopify-theme push  --theme theme-frame --env example-test
+shopify-theme push  --theme theme-frame --env development
 ```
 
 - `dev` starts Vite programmatically, then supervises `shopify theme dev`.
@@ -90,7 +90,7 @@ production form. The first-time workflow is therefore:
 shopify-theme build --theme theme-frame
 git -C theme-frame add snippets/vite-mixer.liquid layout/theme.liquid assets/
 git -C theme-frame commit -m "Initialize Vite assets"
-shopify-theme dev --theme theme-frame --env example-test
+shopify-theme dev --theme theme-frame --env development
 ```
 
 At dev startup the plugin validates the indexed production form, sets `skip-worktree`, then writes

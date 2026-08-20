@@ -110,7 +110,7 @@ describe("shopify-theme CLI", () => {
 
     expect(await runCli(["dev", "--theme", theme], adapter())).toBe(1);
     expect(await runCli(["push", "--theme", theme], adapter())).toBe(1);
-    expect(await runCli(["dev", "--theme", theme, "--environment", "example-test"], adapter())).toBe(
+    expect(await runCli(["dev", "--theme", theme, "--environment", "development"], adapter())).toBe(
       1,
     );
     expect(errors.join("\n")).toContain("--env");
@@ -128,11 +128,11 @@ describe("shopify-theme CLI", () => {
       },
     });
 
-    expect(await runCli(["push", "--theme", theme, "--env", "example-test"], run)).toBe(0);
+    expect(await runCli(["push", "--theme", theme, "--env", "development"], run)).toBe(0);
     expect(events).toEqual([
       "build",
       "verify",
-      `theme push --path ${realpathSync(theme)} -e example-test`,
+      `theme push --path ${realpathSync(theme)} -e development`,
     ]);
   });
 
