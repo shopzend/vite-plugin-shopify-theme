@@ -1,29 +1,28 @@
 import { join, normalize, sep } from "node:path";
 import type { Plugin } from "vite";
-import type { Ctx, ResolvedOptions } from "../types";
-import { createLog } from "../utils/log";
-
-const log = createLog("reload");
+import type { ThemeRuntime } from "../runtime";
+import { shouldReload } from "../run/reload-policy";
 
 // 复用 Vite 的 server.watcher（chokidar），不另起 watcher。
 // 主题 .liquid 不在 Vite 模块图，handleHotUpdate 不触发，故需文件级 watch + 整页刷新。
-export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
+export default function reload(runtime: ThemeRuntime): Plugin {
+  const log = runtime.log("reload");
   return {
     name: "shopify-theme:reload",
     apply: "serve",
     configureServer(server) {
       // 关闭出口：宿主想把整页刷新交给 Shopify CLI 自带的 live reload（两套同开会双重刷新）。
-      if (opts.reload === false) {
+      if (runtime.options.reload === false) {
         log.debug("reload disabled by option");
         return;
       }
       // themePath 单目录前缀即框定主题源码，无需逐子目录白名单。
-      const themeDir = normalize(ctx.themePath);
+      const themeDir = normalize(runtime.themePath);
       // 额外整页 reload 目录（相对 root，可在 themePath 外）。
-      const extraDirs = opts.reload.map((p) => normalize(join(ctx.root, p)));
+      const extraDirs = runtime.options.reload.map((p) => normalize(join(runtime.root, p)));
       // .vitify 由 HMR 接管，纳入会 HMR + full-reload 双触发，故从前缀挖掉。
       //（.git / node_modules 被 Vite watcher 默认 ignored 兜住；assets 即 outDir，dev 下不写出，故不必挖。）
-      const vitifyDir = normalize(join(ctx.themePath, ".vitify"));
+      const vitifyDir = normalize(join(runtime.themePath, ".vitify"));
 
       // 宿主形态下此 add 冗余（themePath 恒在 root 内，已被递归 watch 覆盖）；
       // 保留是为支持 themePath 在 root 外的契约，成本为零。
@@ -34,19 +33,22 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
       const DEBOUNCE_MS = 100;
       let timer: ReturnType<typeof setTimeout> | undefined;
       let pending: string[] = [];
-      const rel = (f: string) => (f.startsWith(ctx.root + sep) ? f.slice(ctx.root.length + 1) : f);
+      const rel = (f: string) =>
+        f.startsWith(runtime.root + sep) ? f.slice(runtime.root.length + 1) : f;
 
       const flush = () => {
         timer = undefined;
         server.ws.send({ type: "full-reload", path: "*" });
         log.info(
           "page reload",
-          pending.length === 1 ? rel(pending[0]) : `${rel(pending[0])} (+${pending.length - 1} more)`,
+          pending.length === 1
+            ? rel(pending[0])
+            : `${rel(pending[0])} (+${pending.length - 1} more)`,
         );
         pending = [];
       };
 
-      const scope = { themeDir, vitifyDir, extraDirs, snippet: ctx.snippet };
+      const scope = { themeDir, vitifyDir, extraDirs, snippet: runtime.snippet };
       const onChange = (file: string) => {
         const f = normalize(file);
         if (!shouldReload(f, scope)) return;
@@ -65,24 +67,12 @@ export default function reload(ctx: Ctx, opts: ResolvedOptions): Plugin {
       // configureServer 在 watcher 创建后同步执行，扫描回调排在其后，不存在错过 ready 的窗口。
       server.watcher.once("ready", () => {
         const watched = Object.keys(server.watcher.getWatched())
-          .map((d) => (d.startsWith(ctx.root + sep) ? d.slice(ctx.root.length + 1) || "." : d))
+          .map((d) =>
+            d.startsWith(runtime.root + sep) ? d.slice(runtime.root.length + 1) || "." : d,
+          )
           .sort();
         log.debug("watched dirs", watched);
       });
     },
   };
-}
-
-// 一次文件事件是否应触发整页刷新（纯函数，file 与各目录均已 normalize）：
-// 共享 watcher 的事件覆盖整个 root，这层前缀过滤把 reload 限定在主题源码
-//（.vitify 除外——由 HMR 接管）或额外目录内；+ sep 按目录边界匹配，themePath
-// 不误命中 theme-foo。自生成的 mixer snippet 跳过，避免启动写入时多刷新一次。
-export function shouldReload(
-  file: string,
-  scope: { themeDir: string; vitifyDir: string; extraDirs: string[]; snippet: string },
-): boolean {
-  const inTheme = file.startsWith(scope.themeDir + sep) && !file.startsWith(scope.vitifyDir + sep);
-  const inExtra = scope.extraDirs.some((d) => file.startsWith(d + sep));
-  if (!inTheme && !inExtra) return false;
-  return !file.endsWith(`${sep}${scope.snippet}`);
 }

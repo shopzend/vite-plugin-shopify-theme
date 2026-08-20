@@ -1,159 +1,154 @@
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runCli } from "../src/cli";
-
-const PROD = `<script src="{{ 'vite-mixer.js' | asset_url }}" type="module"></script>\n`;
-const DEV = `<script src="http://127.0.0.1:9301/@vite/client" type="module"></script>\n`;
-const REL = "snippets/vite-mixer.liquid";
+import { runCli, type ThemeRunAdapter } from "../src/cli";
 
 let dirs: string[] = [];
+let errors: string[] = [];
 
-const makeDir = (prefix: string): string => {
+function makeDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   dirs.push(dir);
   return dir;
-};
+}
 
-const git = (cwd: string, ...args: string[]): string =>
-  execFileSync("git", args, { cwd, encoding: "utf8" });
+function makeTheme(parent = makeDir("vpst-run-"), name = "theme"): string {
+  const theme = join(parent, name);
+  mkdirSync(join(theme, "snippets"), { recursive: true });
+  mkdirSync(join(theme, "layout"), { recursive: true });
+  return theme;
+}
 
-// 真实 git 仓库 fixture：snippets/vite-mixer.liquid 以生产形态入库（推荐工作流的不变量）。
-const makeTheme = (): string => {
-  const dir = makeDir("vpst-cli-");
-  git(dir, "init", "-q");
-  git(dir, "config", "user.email", "t@t");
-  git(dir, "config", "user.name", "t");
-  mkdirSync(join(dir, "snippets"));
-  writeFileSync(join(dir, REL), PROD);
-  git(dir, "add", "-A");
-  git(dir, "commit", "-qm", "init");
-  return dir;
-};
+function adapter(overrides: Partial<ThemeRunAdapter> = {}): ThemeRunAdapter {
+  return {
+    build: vi.fn(async () => {}),
+    dev: vi.fn(async () => ({ close: async () => {} })),
+    shopify: vi.fn(async () => 0),
+    verifyProduction: vi.fn(async () => {}),
+    ...overrides,
+  };
+}
 
-// ls-files -v 首列：S = skip-worktree 已打
-const flagged = (dir: string): boolean =>
-  git(dir, "ls-files", "-v", "--", REL).startsWith("S");
-
-const dirty = (dir: string): string => git(dir, "status", "--porcelain");
-
-// 静默 CLI 输出，测试只断言退出码 + git / 文件系统的真实效果；个别用例再查消息文案。
-let logs: string[];
-let errors: string[];
 beforeEach(() => {
-  logs = [];
   errors = [];
-  vi.spyOn(console, "log").mockImplementation((...a) => void logs.push(a.join(" ")));
-  vi.spyOn(console, "error").mockImplementation((...a) => void errors.push(a.join(" ")));
+  vi.spyOn(console, "error").mockImplementation((...args) => void errors.push(args.join(" ")));
   vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
   dirs = [];
 });
 
-describe("skip / unskip", () => {
-  it("skip 打上标志，重复调用幂等", () => {
-    const dir = makeTheme();
-    expect(runCli(["skip", "--theme", dir])).toBe(0);
-    expect(flagged(dir)).toBe(true);
-    expect(runCli(["skip", "--theme", dir])).toBe(0);
-    expect(flagged(dir)).toBe(true);
+describe("shopify-theme CLI", () => {
+  it("build resolves the Theme Target and runs Vite without requiring --env", async () => {
+    const theme = makeTheme();
+    const run = adapter();
+
+    expect(await runCli(["build", "--theme", theme], run)).toBe(0);
+    expect(run.build).toHaveBeenCalledWith(
+      expect.objectContaining({ themePath: realpathSync(theme) }),
+    );
+    expect(run.verifyProduction).toHaveBeenCalled();
+    expect(run.shopify).not.toHaveBeenCalled();
   });
 
-  it("打标后开发形态覆写对 git 隐身；unskip 恢复可见", () => {
-    const dir = makeTheme();
-    runCli(["skip", "--theme", dir]);
-    writeFileSync(join(dir, REL), DEV);
-    expect(dirty(dir)).toBe("");
-    expect(runCli(["unskip", "--theme", dir])).toBe(0);
-    expect(flagged(dir)).toBe(false);
-    expect(dirty(dir)).toContain(REL);
+  it("runs the production adapter with Vite's standard production mode", async () => {
+    const root = makeDir("vpst-production-");
+    const theme = makeTheme(root);
+    mkdirSync(join(root, "src"));
+    writeFileSync(join(root, "src", "main.ts"), "console.log('theme')\n");
+    writeFileSync(join(theme, "layout", "theme.liquid"), "<html><head></head></html>\n");
+    const modeFile = join(root, "mode.txt");
+    const pluginUrl = pathToFileURL(join(import.meta.dirname, "../src/index.ts")).href;
+    writeFileSync(
+      join(root, "vite.config.mjs"),
+      `
+        import { writeFileSync } from "node:fs";
+        import shopifyTheme from ${JSON.stringify(pluginUrl)};
+        export default {
+          logLevel: "silent",
+          plugins: [
+            { name: "mode-probe", config(_config, env) {
+              writeFileSync(${JSON.stringify(modeFile)}, env.mode);
+            } },
+            shopifyTheme({
+              entry: "src/main.ts",
+              devBranches: false,
+              reload: false,
+              maxDevProcesses: false,
+            }),
+          ],
+        };
+      `,
+    );
+
+    const previous = process.cwd();
+    process.chdir(root);
+    try {
+      expect(await runCli(["build", "--theme", theme])).toBe(0);
+      expect(readFileSync(modeFile, "utf8")).toBe("production");
+    } finally {
+      process.chdir(previous);
+    }
   });
 
-  it("unskip 在无标志时幂等", () => {
-    const dir = makeTheme();
-    expect(runCli(["unskip", "--theme", dir])).toBe(0);
+  it("dev and push require --env, while the long --environment spelling is rejected", async () => {
+    const theme = makeTheme();
+
+    expect(await runCli(["dev", "--theme", theme], adapter())).toBe(1);
+    expect(await runCli(["push", "--theme", theme], adapter())).toBe(1);
+    expect(await runCli(["dev", "--theme", theme, "--environment", "example-test"], adapter())).toBe(
+      1,
+    );
+    expect(errors.join("\n")).toContain("--env");
   });
 
-  it("未跟踪的 snippet 报错 exit 1", () => {
-    const dir = makeTheme();
-    writeFileSync(join(dir, "snippets", "other.liquid"), DEV);
-    expect(runCli(["skip", "--theme", dir, "--snippet", "other.liquid"])).toBe(1);
-    expect(errors.join("\n")).toContain("not tracked");
-  });
-});
+  it("push holds one run across build, production verification, and Shopify upload", async () => {
+    const theme = makeTheme();
+    const events: string[] = [];
+    const run = adapter({
+      build: async () => void events.push("build"),
+      verifyProduction: async () => void events.push("verify"),
+      shopify: async (args) => {
+        events.push(args.join(" "));
+        return 0;
+      },
+    });
 
-describe("restore", () => {
-  it("解除标志 + 检出入库版本，丢弃开发形态覆写", () => {
-    const dir = makeTheme();
-    runCli(["skip", "--theme", dir]);
-    writeFileSync(join(dir, REL), DEV);
-    expect(runCli(["restore", "--theme", dir])).toBe(0);
-    expect(flagged(dir)).toBe(false);
-    expect(readFileSync(join(dir, REL), "utf8")).toBe(PROD);
-    expect(dirty(dir)).toBe("");
-  });
-
-  it("工作区已与入库版本一致时不动文件", () => {
-    const dir = makeTheme();
-    expect(runCli(["restore", "--theme", dir])).toBe(0);
-    expect(logs.join("\n")).toContain("already matches");
+    expect(await runCli(["push", "--theme", theme, "--env", "example-test"], run)).toBe(0);
+    expect(events).toEqual([
+      "build",
+      "verify",
+      `theme push --path ${realpathSync(theme)} -e example-test`,
+    ]);
   });
 
-  it("--snippet 指定非默认文件名", () => {
-    const dir = makeTheme();
-    const rel = "snippets/custom.liquid";
-    writeFileSync(join(dir, rel), PROD);
-    git(dir, "add", "-A");
-    git(dir, "commit", "-qm", "custom");
-    runCli(["skip", "--theme", dir, "--snippet", "custom.liquid"]);
-    writeFileSync(join(dir, rel), DEV);
-    expect(runCli(["restore", "--theme", dir, "--snippet", "custom.liquid"])).toBe(0);
-    expect(readFileSync(join(dir, rel), "utf8")).toBe(PROD);
-  });
-});
+  it("the same canonical Theme Target is mutually exclusive, including a symlink", async () => {
+    const parent = makeDir("vpst-lock-");
+    const theme = makeTheme(parent, "theme");
+    const alias = join(parent, "theme-link");
+    symlinkSync(theme, alias);
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => (release = resolve));
+    const first = runCli(["build", "--theme", theme], adapter({ build: () => blocked }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
 
-describe("status", () => {
-  it("报告标志位与形态（prod / dev）", () => {
-    const dir = makeTheme();
-    expect(runCli(["status", "--theme", dir])).toBe(0);
-    expect(logs.join("\n")).toContain("no skip-worktree flag");
-    expect(logs.join("\n")).toContain("prod");
-    logs = [];
-    runCli(["skip", "--theme", dir]);
-    writeFileSync(join(dir, REL), DEV);
-    expect(runCli(["status", "--theme", dir])).toBe(0);
-    expect(logs.join("\n")).toContain("skip-worktree set");
-    expect(logs.join("\n")).toContain("dev");
-  });
-});
-
-describe("参数与错误路径", () => {
-  it("--help exit 0；无命令 / 多余参数 / 未知命令 / 未知选项 exit 1", () => {
-    const dir = makeTheme();
-    expect(runCli(["--help"])).toBe(0);
-    expect(runCli([])).toBe(1);
-    expect(runCli(["status", "extra", "--theme", dir])).toBe(1);
-    expect(runCli(["frobnicate", "--theme", dir])).toBe(1);
-    expect(runCli(["status", "--theem", dir])).toBe(1);
-  });
-
-  it("非主题目录（无 snippets/）报错 exit 1", () => {
-    const dir = makeDir("vpst-cli-nodir-");
-    expect(runCli(["status", "--theme", dir])).toBe(1);
-    expect(errors.join("\n")).toContain("no snippets/ directory");
-  });
-
-  it("snippets 存在但非 git 仓库时报 git 失败 exit 1", () => {
-    const dir = makeDir("vpst-cli-norepo-");
-    mkdirSync(join(dir, "snippets"));
-    expect(runCli(["status", "--theme", dir])).toBe(1);
-    expect(errors.join("\n")).toContain("git failed");
+    expect(await runCli(["build", "--theme", alias], adapter())).toBe(1);
+    expect(errors.join("\n")).toContain("already has an active Theme Run");
+    release();
+    expect(await first).toBe(0);
   });
 });

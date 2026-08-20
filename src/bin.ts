@@ -1,5 +1,21 @@
 #!/usr/bin/env node
-// shopify-theme-mixer 的进程入口：只做 argv 接线与退出码；全部逻辑在 ./cli 的 runCli（纯函数，可测）。
+// Theme Run CLI process entry. All observable behavior lives behind runCli for integration tests.
 import { runCli } from "./cli";
+import { spawnSync } from "node:child_process";
+import { findProjectCli } from "./run/delegation";
 
-process.exit(runCli(process.argv.slice(2)));
+const projectCli =
+  process.env.VITE_PLUGIN_SHOPIFY_THEME_DELEGATED === "1"
+    ? undefined
+    : findProjectCli(process.cwd(), process.argv[1]);
+if (projectCli) {
+  const result = spawnSync(projectCli, process.argv.slice(2), {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    env: { ...process.env, VITE_PLUGIN_SHOPIFY_THEME_DELEGATED: "1" },
+  });
+  if (result.error) throw result.error;
+  process.exit(result.status ?? 1);
+}
+
+process.exit(await runCli(process.argv.slice(2)));

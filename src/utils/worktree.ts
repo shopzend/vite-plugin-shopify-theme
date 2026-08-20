@@ -23,3 +23,21 @@ export function setSkip(cwd: string, pathspec: string): void {
 export function clearSkip(cwd: string, pathspec: string): void {
   git(cwd, ["update-index", "--no-skip-worktree"], pathspec);
 }
+
+export function isGitRepository(cwd: string): boolean {
+  try {
+    return (
+      execFileSync("git", ["rev-parse", "--is-inside-work-tree"], {
+        cwd,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() === "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function indexFile(cwd: string, pathspec: string): string {
+  return execFileSync("git", ["show", `:${pathspec}`], { cwd, encoding: "utf8" });
+}

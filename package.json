@@ -19,13 +19,13 @@
     "type": "git",
     "url": "git+https://github.com/woodawn/vite-plugin-shopify-theme.git"
   },
+  "bin": {
+    "shopify-theme": "./dist/bin.mjs"
+  },
   "files": [
     "dist"
   ],
   "type": "module",
-  "bin": {
-    "shopify-theme-mixer": "./dist/bin.mjs"
-  },
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
   "exports": {
@@ -50,11 +50,11 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
-    "obuild": "^0.4.37",
-    "typescript": "^6.0.3",
-    "vite": "^8.1.2",
-    "vitest": "^4.1.9"
+    "@types/node": "^26.2.0",
+    "obuild": "^0.4.38",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "vite": "^8.0.0"
