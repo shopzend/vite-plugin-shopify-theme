@@ -1,15 +1,14 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-  # 供 publish.yml 以 job.uses 复用，作为发布前置门禁
+  # main push 由 publish.yml 复用本 workflow，避免独立 CI 与发布门禁重复执行。
   workflow_call:
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
 

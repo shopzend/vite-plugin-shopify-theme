@@ -1,28 +1,30 @@
-name: Publish to npm
+name: Main CI / Publish to npm
 
 on:
   push:
     branches: [main]
-    paths: [package.json]
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write # 供 npm provenance 使用
 
 jobs:
-  # 质量门禁：typecheck + 单测（复用 ci.yml），不过不发布
+  # main 的唯一 CI；PR 由 ci.yml 自己的 pull_request 触发。
   check:
     uses: ./.github/workflows/ci.yml
 
   publish:
     needs: check
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write # 供 npm provenance 使用
     steps:
       - uses: actions/checkout@v6
 
       # 版本门禁：package.json 里的 version 与 npm 已发布版本不同才继续发布。
-      # push 只按 paths 过滤到 package.json，其他字段变动（依赖、scripts）在此拦下。
+      # main 的非版本提交仍跑 check，但会在此跳过 setup / build / publish。
       # 包从未发布时 npm view 失败 → PUBLISHED 为空 → 照常发布。
       - name: Check version
         id: version
