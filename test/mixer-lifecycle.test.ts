@@ -18,17 +18,18 @@ function fixture() {
   mkdirSync(join(root, "src"));
   writeFileSync(
     join(themePath, "layout", "theme.liquid"),
-    "<html><head></head><body></body></html>\n",
+    "<html>\n<head>\n</head>\n<body></body>\n</html>\n",
   );
   writeFileSync(join(root, "src", "main.ts"), "console.log('theme')\n");
   return { root, themePath, snippet: join(themePath, REL) };
 }
 
-function plugins(themePath: string) {
+function plugins(themePath: string, devOrigin?: string) {
   return [
     shopifyTheme({
       themePath,
       entry: "src/main.ts",
+      devOrigin,
       devBranches: false,
       reload: false,
       maxDevProcesses: false,
@@ -98,6 +99,8 @@ describe("Mixer Snippet lifecycle through shopifyTheme()", () => {
     const indexed = git(themePath, "show", `:${REL}`);
 
     expect(working).toContain("vite-plugin-shopify-theme:mixer:dev:v1");
+    expect(working).toMatch(/<script src="http:\/\/127\.0\.0\.1:\d+\/@vite\/client"/);
+    expect(working).toMatch(/<script src="http:\/\/127\.0\.0\.1:\d+\/src\/main\.ts"/);
     expect(indexed).toContain("vite-plugin-shopify-theme:mixer:prod:v1");
     expect(git(themePath, "ls-files", "-v", "--", REL)).toMatch(/^S/);
     expect(git(themePath, "status", "--porcelain")).toBe("");
@@ -113,7 +116,50 @@ describe("Mixer Snippet lifecycle through shopifyTheme()", () => {
     commitTheme(themePath);
     await expect(
       createServer({ root, configFile: false, logLevel: "silent", plugins: plugins(themePath) }),
-    ).rejects.toThrow(/current production Mixer Snippet/);
+    ).rejects.toThrow(/shopify-theme build --path.*git add/);
+  });
+
+  it("writes an explicit HTTPS origin to both dev script tags", async () => {
+    const { root, themePath, snippet } = fixture();
+    await build({ root, configFile: false, logLevel: "silent", plugins: plugins(themePath) });
+    commitTheme(themePath);
+    const server = await createServer({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: plugins(themePath, "https://theme.example.com"),
+      server: { host: "127.0.0.1", port: 0 },
+    });
+    await server.listen();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const content = readFileSync(snippet, "utf8");
+    expect(content).toContain('src="https://theme.example.com/@vite/client"');
+    expect(content).toContain('src="https://theme.example.com/src/main.ts"');
+    await server.close();
+  });
+
+  it("fails build when layout injection cannot establish the Mixer render", async () => {
+    const missing = fixture();
+    rmSync(join(missing.themePath, "layout", "theme.liquid"));
+    await expect(
+      build({
+        root: missing.root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: plugins(missing.themePath),
+      }),
+    ).rejects.toThrow(/layout\/theme\.liquid not found/);
+
+    const noHead = fixture();
+    writeFileSync(join(noHead.themePath, "layout", "theme.liquid"), "<html></html>\n");
+    await expect(
+      build({
+        root: noHead.root,
+        configFile: false,
+        logLevel: "silent",
+        plugins: plugins(noHead.themePath),
+      }),
+    ).rejects.toThrow(/no <\/head>/);
   });
 
   it("build clears skip-worktree and leaves the production form visible", async () => {

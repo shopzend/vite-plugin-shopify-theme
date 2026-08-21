@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatDevProcessWarning,
-  parseShopifyDevProcesses,
-} from "../src/run/dev-processes";
+import { formatDevProcessWarning, parseShopifyDevProcesses } from "../src/run/dev-processes";
 
 const PS = [
   "17849 19:57 /opt/homebrew/opt/node/bin/node /opt/homebrew/bin/shopify theme dev --path theme-frame -e development",

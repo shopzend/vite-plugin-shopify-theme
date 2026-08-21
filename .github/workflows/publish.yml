@@ -19,18 +19,23 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      id-token: write # 供 npm provenance 使用
+      id-token: write # npm Trusted Publishing OIDC
     steps:
       - uses: actions/checkout@v7
 
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "24"
+
       # 版本门禁：package.json 里的 version 与 npm 已发布版本不同才继续发布。
-      # main 的非版本提交仍跑 check，但会在此跳过 setup / build / publish。
+      # main 的非版本提交仍跑 check，但会在此跳过 build / publish。
       # 包从未发布时 npm view 失败 → PUBLISHED 为空 → 照常发布。
       - name: Check version
         id: version
         run: |
-          LOCAL=$(node -p "require('./package.json').version")
-          PUBLISHED=$(npm view "$(node -p "require('./package.json').name")" version 2>/dev/null || echo "")
+          LOCAL=$(vp env exec node -p "require('./package.json').version")
+          NAME=$(vp env exec node -p "require('./package.json').name")
+          PUBLISHED=$(vp pm view "$NAME" version 2>/dev/null || echo "")
           echo "local=$LOCAL published=${PUBLISHED:-<none>}"
           if [ "$LOCAL" = "$PUBLISHED" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -38,27 +43,11 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # 按 viteplus.dev/guide/ci 推荐：setup-vp 安装 Vite+、Node，并自动 vp install。
-      # registry-url 让它写好发布鉴权用的 .npmrc（配合下方 NODE_AUTH_TOKEN）。
-      - uses: voidzero-dev/setup-vp@v1
-        if: steps.version.outputs.changed == 'true'
-        with:
-          # 省略 node-version → setup-vp 默认使用最新 LTS
-          registry-url: https://registry.npmjs.org
-
-      # 用 vp 的运行器构建 dist（本包构建走 obuild；npm 的脚本运行器
-      # 在 pnpm 的 node_modules 布局里解析不到 obuild）。
       - run: vp run build
         if: steps.version.outputs.changed == 'true'
 
-      # vp install 会向 package.json 注入 devEngines.packageManager=pnpm 钉死工具链，
-      # 使后续 npm publish 报 EBADDEVENGINES；而 vp 不把 pnpm 暴露到 PATH（无 vp publish）。
-      # 故发布前用 node 剥掉这个仅供开发期的字段（不入库，仅改 runner 工作副本），
-      # 再用 npm（PATH 上确有）发布。dist 已由 vp run build 构建，--ignore-scripts 跳过生命周期脚本。
+      # npm 侧须预先把本仓库和此 workflow 配置为 Trusted Publisher。
+      # npm >=11.5.1 从 GitHub OIDC 换取短期发布凭据，并自动生成 provenance。
       - name: Publish
         if: steps.version.outputs.changed == 'true'
-        run: |
-          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));delete p.devEngines;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
-          npm publish --ignore-scripts --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: vp env exec --node 24 --npm '^11.5.1' npm publish --ignore-scripts --access public

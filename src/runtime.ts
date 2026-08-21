@@ -3,18 +3,12 @@ import type { ResolvedOptions } from "./types";
 import { createRuntimeLog } from "./utils/log";
 
 export class ThemeRuntime {
-  root = "";
-  themePath = "";
-  entry = "";
-  command: "serve" | "build" = "serve";
-  runLockToken: string | undefined;
-  snippet: string;
   readonly options: ResolvedOptions;
+  private context: Readonly<ThemeRuntimeContext> | undefined;
   private readonly logger;
 
   constructor(options: ResolvedOptions) {
     this.options = options;
-    this.snippet = options.snippet;
     this.logger = createRuntimeLog(options.debug);
   }
 
@@ -24,20 +18,19 @@ export class ThemeRuntime {
     entry: string;
     command: "serve" | "build";
     runLockToken?: string;
-  }): void {
-    this.root = input.root;
-    this.themePath = input.themePath;
-    this.entry = input.entry;
-    this.command = input.command;
-    this.runLockToken = input.runLockToken;
+  }): Readonly<ThemeRuntimeContext> {
+    if (this.context) throw new Error("[shopify-theme] Theme Runtime was resolved more than once");
+    this.context = Object.freeze({ ...input, snippet: this.options.snippet });
+    return this.context;
   }
 
-  assertResolved(): void {
-    if (!this.themePath) {
+  require(): Readonly<ThemeRuntimeContext> {
+    if (!this.context) {
       throw new Error(
         "[shopify-theme] missing required option: themePath. Use the shopify-theme CLI or pass options.themePath for a direct Vite run.",
       );
     }
+    return this.context;
   }
 
   setLogger(logger: Logger): void {
@@ -47,4 +40,13 @@ export class ThemeRuntime {
   log(scope: string) {
     return this.logger.scope(scope);
   }
+}
+
+export interface ThemeRuntimeContext {
+  root: string;
+  themePath: string;
+  entry: string;
+  command: "serve" | "build";
+  runLockToken?: string;
+  snippet: string;
 }

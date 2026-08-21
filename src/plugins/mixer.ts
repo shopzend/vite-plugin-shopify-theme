@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from
 import { resolve } from "node:path";
 import type { Plugin } from "vite";
 import type { ThemeRuntime } from "../runtime";
-import { resolveDevHost } from "../run/dev-host";
+import { resolveDevOrigin } from "../run/dev-origin";
 import { clearSkip, isGitRepository, skipState } from "../utils/worktree";
 
 export const MIXER_FORMAT_VERSION = 1;
@@ -32,8 +32,10 @@ export function mixerForm(content: string): "dev" | "prod" | "unknown" {
 export default function mixer(runtime: ThemeRuntime): Plugin {
   const log = runtime.log("mixer");
   // 惰性求值：ctx 由 :config 的 config 钩子填充，工厂运行时尚未就绪。
-  const snippetsPath = () => resolve(runtime.themePath, "snippets");
-  const snippetViteMixer = () => resolve(snippetsPath(), runtime.snippet);
+  const snippetViteMixer = () => {
+    const context = runtime.require();
+    return resolve(context.themePath, "snippets", context.snippet);
+  };
 
   // 写出 snippet = prefix + 各 tag。dev/build 共用此信封，仅差 prefix（build 带 disclaimer）。
   // 幂等：内容未变不落盘——mtime 一动，并行的 `shopify theme dev` 就会重传店铺、多刷一次页面。
@@ -51,15 +53,16 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
   // 免去接入时的手动一步。幂等：已有引用（任意引号、任意位置，含条件分支内的自定义写法）即跳过，
   // 不动用户的手工编排。持久写入——render 标签是主题的生产依赖（店铺端也要渲染产物），
   // 必须随主题仓库提交。
-  const ensureRenderTag = (): void => {
-    const layout = resolve(runtime.themePath, "layout", "theme.liquid");
+  const ensureRenderTag = (strict = false): void => {
+    const context = runtime.require();
+    const layout = resolve(context.themePath, "layout", "theme.liquid");
     if (!existsSync(layout)) {
-      log.error(
-        `layout/theme.liquid not found; add {% render '${renderName(runtime.snippet)}' %} manually`,
-      );
+      const message = `layout/theme.liquid not found; add {% render '${renderName(context.snippet)}' %} manually`;
+      if (strict) throw new Error(`[shopify-theme] ${message}`);
+      log.error(message);
       return;
     }
-    const name = renderName(runtime.snippet);
+    const name = renderName(context.snippet);
     const content = readFileSync(layout, "utf8");
     if (new RegExp(`\\{%-?\\s*render\\s+['"]${escapeRegExp(name)}['"]`).test(content)) {
       log.debug(`render tag already present in layout/theme.liquid`);
@@ -68,7 +71,9 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
     // 注入点：</head> 起始行之前，缩进随 </head> 再进两格。
     const head = /^([ \t]*)<\/head>/im.exec(content);
     if (!head) {
-      log.error(`no </head> in layout/theme.liquid; add {% render '${name}' %} manually`);
+      const message = `no </head> in layout/theme.liquid; add {% render '${name}' %} manually`;
+      if (strict) throw new Error(`[shopify-theme] ${message}`);
+      log.error(message);
       return;
     }
     writeFileSync(
@@ -88,23 +93,15 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
       ensureRenderTag();
 
       server.httpServer?.once("listening", () => {
+        const context = runtime.require();
         log.debug("dev server", server.httpServer?.address());
-        // 端口恒取实际监听地址（源自 vite.config 的 server.port，未指定则 Vite 自动选）。
-        // 主机名由 devHost 选项定：默认 "127.0.0.1"（server.host 设成 wildcard 时也不外泄
-        // 到 LAN IP——内嵌浏览器 / 代理常访问不了 LAN 地址）；"auto" 才按监听地址推导
-        // （见 resolveDevHost，wildcard 时取 LAN IP，便于手机 / 局域网预览）；其余值原样使用。
-        const addr = server.httpServer?.address();
-        const port = addr && typeof addr === "object" ? addr.port : server.config.server.port;
-        const host =
-          runtime.options.devHost === "auto"
-            ? resolveDevHost(addr && typeof addr === "object" ? addr.address : undefined)
-            : runtime.options.devHost;
-        const origin = `http://${host}:${port}`;
+        // Vite 用 prependListener 先填 resolvedUrls，因此这里能读取包含真实协议与动态端口的地址。
+        const origin = resolveDevOrigin(runtime.options.devOrigin, server.resolvedUrls);
 
         // 单入口（ctx.entry，已是 root 相对、正斜杠），dev script 直接用；多入口待 entry 收多值。
         // /@vite/client 必须显式注入（Vite backend-integration 约定）：full-reload 与 HMR
         // 的 WebSocket 全靠它建立，不能指望 entry 模块图里恰好传递性加载了 client。
-        const tags = [devScriptTag(origin, "@vite/client"), devScriptTag(origin, runtime.entry)];
+        const tags = [devScriptTag(origin, "@vite/client"), devScriptTag(origin, context.entry)];
         log.debug("dev snippet ->", snippetViteMixer());
         writeSnippet(tags, marker("dev"));
       });
@@ -112,12 +109,13 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
 
     // generateBundle 仅在 vite build 触发（dev 不触发），故无需再用 command 区分构建态。
     generateBundle(_options, bundle) {
-      ensureRenderTag();
+      const context = runtime.require();
+      ensureRenderTag(true);
 
-      if (runtime.options.worktree !== "off" && isGitRepository(runtime.themePath)) {
-        const rel = `snippets/${runtime.snippet}`;
-        if (skipState(runtime.themePath, rel) === "flagged") {
-          clearSkip(runtime.themePath, rel);
+      if (runtime.options.worktree !== "off" && isGitRepository(context.themePath)) {
+        const rel = `snippets/${context.snippet}`;
+        if (skipState(context.themePath, rel) === "flagged") {
+          clearSkip(context.themePath, rel);
           log.info(`skip-worktree cleared on ${rel} for production build`);
         }
       }
@@ -153,7 +151,7 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
     // 是内容寻址产物（见 :config 命名策略），不在本次 bundle 里的即上次构建残留。
     // entry 的 vite-mixer.js / vite-mixer.css 无中间段，不匹配；主题手工资产不受影响。
     writeBundle(_options, bundle) {
-      const assetsPath = resolve(runtime.themePath, "assets");
+      const assetsPath = resolve(runtime.require().themePath, "assets");
       if (!existsSync(assetsPath)) return;
       const current = new Set(Object.keys(bundle));
       const stale = readdirSync(assetsPath).filter(

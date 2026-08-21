@@ -17,12 +17,18 @@ export interface ThemeTargetLock {
   release(): void;
 }
 
-interface LockRecord {
+export interface ThemeTargetLockRecord {
   token: string;
   pid: number;
   mode: string;
   themePath: string;
   startedAt: string;
+}
+
+export interface ThemeTargetLockStatus {
+  lock?: ThemeTargetLockRecord;
+  recovery?: ThemeTargetLockRecord;
+  active: boolean;
 }
 
 export class ThemeTargetBusyError extends Error {}
@@ -34,8 +40,7 @@ export function acquireThemeTargetLock(
 ): ThemeTargetLock {
   const themePath = canonicalThemePath(inputPath);
   mkdirSync(root, { recursive: true });
-  const name = createHash("sha256").update(themePath).digest("hex").slice(0, 24) + ".json";
-  const file = join(root, name);
+  const file = lockFile(themePath, root);
   const recoveryFile = `${file}.recovery`;
   const record = lockRecord(themePath, mode);
 
@@ -87,7 +92,23 @@ export function acquireThemeTargetLock(
   }
 }
 
-function lockRecord(themePath: string, mode: string): LockRecord {
+export function inspectThemeTargetLock(
+  inputPath: string,
+  root = join(tmpdir(), "vite-plugin-shopify-theme", "locks"),
+): ThemeTargetLockStatus {
+  const themePath = canonicalThemePath(inputPath);
+  const file = lockFile(themePath, root);
+  const lock = readRecord(file);
+  const recovery = readRecord(`${file}.recovery`);
+  return { lock, recovery, active: Boolean(lock && processIsAlive(lock.pid)) };
+}
+
+function lockFile(themePath: string, root: string): string {
+  const name = createHash("sha256").update(themePath).digest("hex").slice(0, 24) + ".json";
+  return join(root, name);
+}
+
+function lockRecord(themePath: string, mode: string): ThemeTargetLockRecord {
   return {
     token: randomUUID(),
     pid: process.pid,
@@ -97,7 +118,7 @@ function lockRecord(themePath: string, mode: string): LockRecord {
   };
 }
 
-function createOwnedFile(file: string, record: LockRecord): void {
+function createOwnedFile(file: string, record: ThemeTargetLockRecord): void {
   const fd = openSync(file, "wx");
   try {
     writeFileSync(fd, JSON.stringify(record, null, 2));
@@ -113,7 +134,7 @@ function createOwnedFile(file: string, record: LockRecord): void {
   }
 }
 
-function heldLock(file: string, record: LockRecord): ThemeTargetLock {
+function heldLock(file: string, record: ThemeTargetLockRecord): ThemeTargetLock {
   return {
     token: record.token,
     release() {
@@ -131,15 +152,15 @@ function unlinkOwned(file: string, token: string): void {
   }
 }
 
-function readRecord(file: string): LockRecord | undefined {
+function readRecord(file: string): ThemeTargetLockRecord | undefined {
   try {
-    return JSON.parse(readFileSync(file, "utf8")) as LockRecord;
+    return JSON.parse(readFileSync(file, "utf8")) as ThemeTargetLockRecord;
   } catch {
     return undefined;
   }
 }
 
-function activeRun(themePath: string, current: LockRecord): ThemeTargetBusyError {
+function activeRun(themePath: string, current: ThemeTargetLockRecord): ThemeTargetBusyError {
   return new ThemeTargetBusyError(
     `${themePath} already has an active Theme Run (${current.mode}, pid ${current.pid})`,
   );

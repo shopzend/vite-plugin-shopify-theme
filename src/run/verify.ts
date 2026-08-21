@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve, sep } from "node:path";
-import { mixerForm } from "../plugins/mixer";
+import { escapeRegExp, mixerForm, renderName } from "../plugins/mixer";
 
 // 只扫 Shopify 标准主题目录：GitHub 集成与 theme push 只同步这些目录，
 // 仓库外围文件（docs、.reference、.vitify 源码）不上线，扫描它们只会误报。
@@ -16,8 +16,8 @@ const THEME_DIRS = [
 ];
 const SCAN_EXTENSIONS = [".liquid", ".js", ".css"];
 
-// 开发形态残留：本地 dev server 地址与 vite 客户端。上线后资产静默加载失败。
-const DEV_ARTIFACT = /http:\/\/(?:localhost|127\.0\.0\.1|192\.168\.|10\.)|\/@vite\/client/;
+// 开发形态由 Vite client 唯一标识，与 origin 的协议、地址或 tunnel 域名无关。
+const DEV_ARTIFACT = /\/@vite\/client/;
 // 未解析的构建期别名：浏览器解析不了裸标识符，整个 module 静默加载失败。
 const ALIAS_IMPORT = /^\s*import .*['"](?:#theme|@(?:theme|vite))\//m;
 // 未批准的第三方 CDN：不符合 Theme Store 的资产托管要求。
@@ -33,10 +33,21 @@ export function verifyProductionTheme(themePath: string, snippet: string): strin
     failures.push(`Mixer Snippet is not in production form: ${mixerFile}`);
   }
 
+  const layoutFile = resolve(themePath, "layout", "theme.liquid");
+  const render = renderName(snippet);
+  if (!existsSync(layoutFile)) {
+    failures.push(`layout/theme.liquid is missing; it must render ${render}`);
+  } else {
+    const layout = readFileSync(layoutFile, "utf8");
+    if (!new RegExp(`\\{%-?\\s*render\\s+['"]${escapeRegExp(render)}['"]`).test(layout)) {
+      failures.push(`layout/theme.liquid does not render ${render}`);
+    }
+  }
+
   for (const file of themeFiles(themePath)) {
     const content = readFileSync(resolve(themePath, file), "utf8");
     if (DEV_ARTIFACT.test(content)) {
-      failures.push(`dev server address or /@vite/client in ${file}`);
+      failures.push(`/@vite/client in ${file}`);
     }
     if (file.startsWith("assets/") && file.endsWith(".js") && ALIAS_IMPORT.test(content)) {
       failures.push(`unresolved build-time alias import in ${file}`);
@@ -57,7 +68,12 @@ function themeFiles(themePath: string): string[] {
       if (!entry.isFile()) continue;
       if (!SCAN_EXTENSIONS.some((ext) => entry.name.endsWith(ext))) continue;
       const absolute = resolve(entry.parentPath, entry.name);
-      files.push(absolute.slice(resolve(themePath).length + 1).split(sep).join("/"));
+      files.push(
+        absolute
+          .slice(resolve(themePath).length + 1)
+          .split(sep)
+          .join("/"),
+      );
     }
   }
   return files.sort();

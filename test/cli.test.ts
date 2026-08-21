@@ -7,6 +7,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -15,6 +16,7 @@ import { runCli, type ThemeRunAdapter } from "../src/cli";
 
 let dirs: string[] = [];
 let errors: string[] = [];
+let outputs: string[] = [];
 
 function makeDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -26,6 +28,7 @@ function makeTheme(parent = makeDir("vpst-run-"), name = "theme"): string {
   const theme = join(parent, name);
   mkdirSync(join(theme, "snippets"), { recursive: true });
   mkdirSync(join(theme, "layout"), { recursive: true });
+  writeFileSync(join(theme, "layout", "theme.liquid"), "<html>{% render 'vite-mixer' %}</html>\n");
   return theme;
 }
 
@@ -41,8 +44,12 @@ function adapter(overrides: Partial<ThemeRunAdapter> = {}): ThemeRunAdapter {
 
 beforeEach(() => {
   errors = [];
+  outputs = [];
   vi.spyOn(console, "error").mockImplementation((...args) => void errors.push(args.join(" ")));
-  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+  vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    outputs.push(String(chunk));
+    return true;
+  });
   vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 });
 
@@ -53,11 +60,11 @@ afterEach(() => {
 });
 
 describe("shopify-theme CLI", () => {
-  it("build resolves the Theme Target and runs Vite without requiring --env", async () => {
+  it("build resolves the Theme Target from --path", async () => {
     const theme = makeTheme();
     const run = adapter();
 
-    expect(await runCli(["build", "--theme", theme], run)).toBe(0);
+    expect(await runCli(["build", "--path", theme], run)).toBe(0);
     expect(run.build).toHaveBeenCalledWith(
       expect.objectContaining({ themePath: realpathSync(theme) }),
     );
@@ -70,7 +77,7 @@ describe("shopify-theme CLI", () => {
     const theme = makeTheme(root);
     mkdirSync(join(root, "src"));
     writeFileSync(join(root, "src", "main.ts"), "console.log('theme')\n");
-    writeFileSync(join(theme, "layout", "theme.liquid"), "<html><head></head></html>\n");
+    writeFileSync(join(theme, "layout", "theme.liquid"), "<html>\n<head>\n</head>\n</html>\n");
     const modeFile = join(root, "mode.txt");
     const pluginUrl = pathToFileURL(join(import.meta.dirname, "../src/index.ts")).href;
     writeFileSync(
@@ -98,22 +105,33 @@ describe("shopify-theme CLI", () => {
     const previous = process.cwd();
     process.chdir(root);
     try {
-      expect(await runCli(["build", "--theme", theme])).toBe(0);
+      expect(await runCli(["build", "--path", theme])).toBe(0);
       expect(readFileSync(modeFile, "utf8")).toBe("production");
     } finally {
       process.chdir(previous);
     }
   });
 
-  it("dev and push require --env, while the long --environment spelling is rejected", async () => {
+  it("forwards Shopify CLI options without requiring an environment", async () => {
     const theme = makeTheme();
+    const run = adapter();
 
-    expect(await runCli(["dev", "--theme", theme], adapter())).toBe(1);
-    expect(await runCli(["push", "--theme", theme], adapter())).toBe(1);
-    expect(await runCli(["dev", "--theme", theme, "--environment", "development"], adapter())).toBe(
-      1,
-    );
-    expect(errors.join("\n")).toContain("--env");
+    expect(
+      await runCli(
+        ["dev", "--path", theme, "--environment", "development", "--host", "0.0.0.0"],
+        run,
+      ),
+    ).toBe(0);
+    expect(run.shopify).toHaveBeenCalledWith([
+      "theme",
+      "dev",
+      "--path",
+      realpathSync(theme),
+      "--environment",
+      "development",
+      "--host",
+      "0.0.0.0",
+    ]);
   });
 
   it("push holds one run across build, production verification, and Shopify upload", async () => {
@@ -128,27 +146,159 @@ describe("shopify-theme CLI", () => {
       },
     });
 
-    expect(await runCli(["push", "--theme", theme, "--env", "development"], run)).toBe(0);
+    expect(
+      await runCli(["push", "--path", theme, "--environment", "development", "--strict"], run),
+    ).toBe(0);
     expect(events).toEqual([
       "build",
       "verify",
-      `theme push --path ${realpathSync(theme)} -e development`,
+      `theme push --path ${realpathSync(theme)} --environment development --strict`,
     ]);
+  });
+
+  it("package holds one run across build, verification, and Shopify packaging", async () => {
+    const theme = makeTheme();
+    const events: string[] = [];
+    const run = adapter({
+      build: async () => void events.push("build"),
+      verifyProduction: async () => void events.push("verify"),
+      shopify: async (args) => {
+        events.push(args.join(" "));
+        return 0;
+      },
+    });
+
+    expect(await runCli(["package", `--path=${theme}`, "--no-color"], run)).toBe(0);
+    expect(events).toEqual([
+      "build",
+      "verify",
+      `theme package --path ${realpathSync(theme)} --no-color`,
+    ]);
+  });
+
+  it.each(["push", "package"] as const)(
+    "%s stops before Shopify when production verification fails",
+    async (mode) => {
+      const theme = makeTheme();
+      const run = adapter({
+        verifyProduction: async () => {
+          throw new Error("production gate failed");
+        },
+      });
+
+      await expect(runCli([mode, "--path", theme], run)).rejects.toThrow("production gate failed");
+      expect(run.shopify).not.toHaveBeenCalled();
+    },
+  );
+
+  it("closes Vite after a failing Shopify dev process", async () => {
+    const theme = makeTheme();
+    const events: string[] = [];
+    const run = adapter({
+      dev: async () => ({ close: async () => void events.push("close") }),
+      shopify: async () => {
+        events.push("shopify");
+        return 7;
+      },
+    });
+
+    expect(await runCli(["dev", "--path", theme], run)).toBe(1);
+    expect(events).toEqual(["shopify", "close"]);
+    expect(errors.join("\n")).toContain("Shopify CLI exited with code 7");
+  });
+
+  it("keeps push JSON stdout machine-readable", async () => {
+    const theme = makeTheme();
+    const run = adapter({
+      shopify: async () => {
+        process.stdout.write('{"ok":true}\n');
+        return 0;
+      },
+    });
+
+    expect(await runCli(["push", "--path", theme, "--json"], run)).toBe(0);
+    expect(JSON.parse(outputs.join(""))).toEqual({ ok: true });
+    expect(run.build).toHaveBeenCalledWith(expect.objectContaining({ json: true }));
+  });
+
+  it("rejects duplicate paths and old local --theme usage", async () => {
+    const theme = makeTheme();
+    expect(await runCli(["build", "--path", theme, "--path", theme], adapter())).toBe(1);
+    expect(await runCli(["build", "--theme", theme], adapter())).toBe(1);
+    expect(errors.join("\n")).toContain("--path");
+  });
+
+  it("rejects an empty path value", async () => {
+    expect(await runCli(["build", "--path"], adapter())).toBe(1);
+    expect(await runCli(["build", "--path="], adapter())).toBe(1);
+    expect(errors.join("\n")).toContain("missing value for --path");
+  });
+
+  it("restore replaces the hidden dev Mixer with the indexed production form", async () => {
+    const theme = makeTheme();
+    const snippet = join(theme, "snippets", "vite-mixer.liquid");
+    const prod =
+      "{% comment %} vite-plugin-shopify-theme:mixer:prod:v1 {% endcomment %}\n{{ 'vite-mixer.js' | asset_url }}\n";
+    writeFileSync(snippet, prod);
+    git(theme, "init", "-q");
+    git(theme, "config", "user.email", "test@example.com");
+    git(theme, "config", "user.name", "Test");
+    git(theme, "add", "-A");
+    git(theme, "commit", "-qm", "init");
+    git(theme, "update-index", "--skip-worktree", "--", "snippets/vite-mixer.liquid");
+    writeFileSync(
+      snippet,
+      '{% comment %} vite-plugin-shopify-theme:mixer:dev:v1 {% endcomment %}\n<script src="http://localhost:5173/@vite/client"></script>\n',
+    );
+
+    expect(await runCli(["restore", "--path", theme], adapter())).toBe(0);
+    expect(readFileSync(snippet, "utf8")).toBe(prod);
+    expect(git(theme, "ls-files", "-v", "--", "snippets/vite-mixer.liquid")).toMatch(/^S/);
+    expect(git(theme, "status", "--porcelain")).toBe("");
+  });
+
+  it("doctor emits stable JSON diagnostics without acquiring the active-run lock", async () => {
+    const theme = makeTheme();
+    writeFileSync(
+      join(theme, "snippets", "vite-mixer.liquid"),
+      "{% comment %} vite-plugin-shopify-theme:mixer:prod:v1 {% endcomment %}\n{{ 'vite-mixer.js' | asset_url }}\n",
+    );
+    git(theme, "init", "-q");
+    git(theme, "config", "user.email", "test@example.com");
+    git(theme, "config", "user.name", "Test");
+    git(theme, "add", "-A");
+    git(theme, "commit", "-qm", "init");
+
+    expect(
+      await runCli(
+        ["doctor", "--path", theme, "--json"],
+        adapter({ shopifyExecutable: () => true }),
+      ),
+    ).toBe(0);
+    const report = JSON.parse(outputs.join(""));
+    expect(report.ok).toBe(true);
+    expect(report.diagnostics.map((item: { code: string }) => item.code)).toEqual(
+      expect.arrayContaining(["target.structure", "mixer.index", "layout.render", "lock.active"]),
+    );
   });
 
   it("the same canonical Theme Target is mutually exclusive, including a symlink", async () => {
     const parent = makeDir("vpst-lock-");
     const theme = makeTheme(parent, "theme");
     const alias = join(parent, "theme-link");
-    symlinkSync(theme, alias);
+    symlinkSync(theme, alias, process.platform === "win32" ? "junction" : "dir");
     let release!: () => void;
     const blocked = new Promise<void>((resolve) => (release = resolve));
-    const first = runCli(["build", "--theme", theme], adapter({ build: () => blocked }));
+    const first = runCli(["build", "--path", theme], adapter({ build: () => blocked }));
     await new Promise((resolve) => setTimeout(resolve, 10));
 
-    expect(await runCli(["build", "--theme", alias], adapter())).toBe(1);
+    expect(await runCli(["build", "--path", alias], adapter())).toBe(1);
     expect(errors.join("\n")).toContain("already has an active Theme Run");
     release();
     expect(await first).toBe(0);
   });
 });
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" });
+}

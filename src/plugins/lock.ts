@@ -5,8 +5,9 @@ import { acquireThemeTargetLock, type ThemeTargetLock } from "../run/target-lock
 export default function lock(runtime: ThemeRuntime): Plugin {
   let held: ThemeTargetLock | undefined;
   const acquire = () => {
-    if (runtime.runLockToken || held) return;
-    held = acquireThemeTargetLock(runtime.themePath, runtime.command === "serve" ? "dev" : "build");
+    const context = runtime.require();
+    if (context.runLockToken || held) return;
+    held = acquireThemeTargetLock(context.themePath, context.command === "serve" ? "dev" : "build");
   };
   const release = () => {
     held?.release();
@@ -16,7 +17,7 @@ export default function lock(runtime: ThemeRuntime): Plugin {
   return {
     name: "shopify-theme:lock",
     buildStart() {
-      if (runtime.command === "build") acquire();
+      if (runtime.require().command === "build") acquire();
     },
     configureServer(server) {
       acquire();

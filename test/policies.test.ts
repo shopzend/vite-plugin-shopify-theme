@@ -1,10 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import type { NetworkInterfaceInfo } from "node:os";
 import { tmpdir } from "node:os";
 import { basename, join, sep } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveThemeOptions } from "../src/options";
-import { pickLanIPv4, resolveDevHost } from "../src/run/dev-host";
+import { resolveDevOrigin } from "../src/run/dev-origin";
 import { currentBranch, gitDir } from "../src/run/git-branch";
 import { shouldReload } from "../src/run/reload-policy";
 
@@ -35,31 +34,32 @@ describe("option policy", () => {
       devBranches: false,
       reload: false,
       maxDevProcesses: 0,
-      devHost: "127.0.0.1",
+      devOrigin: "local",
     });
   });
 });
 
-describe("dev host policy", () => {
-  it("maps loopback and concrete addresses without inspecting interfaces", () => {
-    expect(resolveDevHost(undefined, {})).toBe("localhost");
-    expect(resolveDevHost("127.0.0.1", {})).toBe("localhost");
-    expect(resolveDevHost("192.168.1.5", {})).toBe("192.168.1.5");
+describe("dev origin policy", () => {
+  const urls = {
+    local: ["http://localhost:5173/"],
+    network: ["https://192.168.1.2:5173/"],
+  };
+
+  it("selects Vite's resolved local or network URL with protocol and dynamic port", () => {
+    expect(resolveDevOrigin("local", urls)).toBe("http://localhost:5173");
+    expect(resolveDevOrigin("network", urls)).toBe("https://192.168.1.2:5173");
   });
 
-  it("selects a physical LAN IPv4 for wildcard listeners", () => {
-    const interfaces = {
-      utun3: [interfaceInfo("172.19.0.1")],
-      en5: [interfaceInfo("10.0.0.9")],
-      en0: [interfaceInfo("192.168.1.2")],
-    };
-    expect(pickLanIPv4(interfaces)).toBe("192.168.1.2");
-    expect(resolveDevHost("0.0.0.0", interfaces)).toBe("192.168.1.2");
+  it("accepts an explicit http(s) origin and rejects incomplete or path-bearing values", () => {
+    expect(resolveDevOrigin("https://theme.example.com", null)).toBe("https://theme.example.com");
+    expect(() => resolveDevOrigin("theme.example.com", null)).toThrow(/absolute http/);
+    expect(() => resolveDevOrigin("https://theme.example.com/vite", null)).toThrow(/without path/);
   });
 
-  it("ignores internal and IPv6-only interfaces", () => {
-    expect(pickLanIPv4({ lo0: [interfaceInfo("127.0.0.1", true)] })).toBeUndefined();
-    expect(resolveDevHost("::", {})).toBe("localhost");
+  it("explains how to expose Vite when no network URL is available", () => {
+    expect(() => resolveDevOrigin("network", { local: urls.local, network: [] })).toThrow(
+      /server\.host/,
+    );
   });
 });
 
@@ -84,7 +84,9 @@ describe("Git branch policy", () => {
   });
 
   it("reports non-repositories with the plugin error prefix", () => {
-    expect(() => currentBranch(temporary("vpst-no-git-"))).toThrow(/\[shopify-theme\].*no git repo/);
+    expect(() => currentBranch(temporary("vpst-no-git-"))).toThrow(
+      /\[shopify-theme\].*no git repo/,
+    );
   });
 });
 
@@ -92,7 +94,6 @@ describe("reload policy", () => {
   const themeDir = join(sep, "work", "theme");
   const scope = {
     themeDir,
-    vitifyDir: join(themeDir, ".vitify"),
     extraDirs: [join(sep, "work", "docs")],
     snippet: "vite-mixer.liquid",
   };
@@ -100,7 +101,6 @@ describe("reload policy", () => {
   it("reloads theme and extra directories but excludes HMR and generated files", () => {
     expect(shouldReload(join(themeDir, "sections", "frame.liquid"), scope)).toBe(true);
     expect(shouldReload(join(sep, "work", "docs", "guide.md"), scope)).toBe(true);
-    expect(shouldReload(join(themeDir, ".vitify", "index.ts"), scope)).toBe(false);
     expect(shouldReload(join(themeDir, "snippets", "vite-mixer.liquid"), scope)).toBe(false);
   });
 
@@ -108,14 +108,3 @@ describe("reload policy", () => {
     expect(shouldReload(join(sep, "work", "theme-next", "a.liquid"), scope)).toBe(false);
   });
 });
-
-function interfaceInfo(address: string, internal = false): NetworkInterfaceInfo {
-  return {
-    address,
-    netmask: "255.255.255.0",
-    family: "IPv4",
-    mac: "00:00:00:00:00:00",
-    internal,
-    cidr: `${address}/24`,
-  };
-}

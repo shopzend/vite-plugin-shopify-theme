@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +27,7 @@ function fixture() {
   mkdirSync(join(root, "src"));
   writeFileSync(
     join(themePath, "layout", "theme.liquid"),
-    "<html><head></head><body></body></html>\n",
+    "<html>\n<head>\n</head>\n<body></body>\n</html>\n",
   );
   return { root, themePath, snippet: join(themePath, REL), assets: join(themePath, "assets") };
 }

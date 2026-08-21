@@ -1,6 +1,6 @@
 // 工厂 shopifyTheme(options) 的公开选项。
 export interface ShopifyThemeOptions {
-  /** 直接运行 Vite 时必填；Theme Run CLI 会通过私有上下文提供 */
+  /** 直接运行 Vite 时必填；可传相对当前工作目录或绝对路径；Theme Run CLI 会通过私有上下文提供 */
   themePath?: string;
   /** Vite root 内的入口（可传 root 相对路径或绝对路径，必填） */
   entry: string;
@@ -19,12 +19,8 @@ export interface ShopifyThemeOptions {
    *（如想交给 `shopify theme dev` 自带的 live reload——两套机制同开会双重刷新）
    */
   reload?: string[] | false;
-  /**
-   * dev snippet 里 script 地址用的主机名（端口恒取 dev server 实际监听端口）；
-   * 默认 "127.0.0.1"。传 "auto" 由监听地址推导（wildcard 时取物理网卡 LAN IPv4，
-   * 供手机 / 局域网预览）；传其他值原样使用（LAN IP、隧道域名等）。
-   */
-  devHost?: string;
+  /** dev snippet 使用的 Vite origin；默认 local，network 用于局域网，完整 URL 用于代理或 tunnel */
+  devOrigin?: "local" | "network" | (string & {});
   /**
    * dev 启动前清点本机已经存在的 `shopify theme dev` / `shopify app dev`，
    * 超过此数即告警并列出。默认 0；传 false 关闭检查。
@@ -40,6 +36,6 @@ export type ResolvedOptions = ShopifyThemeOptions &
   Required<
     Pick<
       ShopifyThemeOptions,
-      "snippet" | "devBranches" | "worktree" | "reload" | "devHost" | "maxDevProcesses" | "debug"
+      "snippet" | "devBranches" | "worktree" | "reload" | "devOrigin" | "maxDevProcesses" | "debug"
     >
   >;

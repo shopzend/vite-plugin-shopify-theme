@@ -40,33 +40,52 @@ describe("verifyProductionTheme", () => {
   });
 
   it("fails when the Mixer Snippet is missing or in dev form", () => {
-    const missing = makeTheme({});
+    const missing = makeTheme({
+      "layout/theme.liquid": "<html>{% render 'vite-mixer' %}</html>\n",
+    });
     rmSync(join(missing, "snippets/vite-mixer.liquid"));
     expect(verifyProductionTheme(missing, "vite-mixer.liquid")).toEqual([
       expect.stringContaining("not in production form"),
     ]);
 
-    const dev = makeTheme({ "snippets/vite-mixer.liquid": DEV_MIXER });
+    const dev = makeTheme({
+      "layout/theme.liquid": "<html>{% render 'vite-mixer' %}</html>\n",
+      "snippets/vite-mixer.liquid": DEV_MIXER,
+    });
     expect(verifyProductionTheme(dev, "vite-mixer.liquid")).toEqual([
       expect.stringContaining("not in production form"),
-      expect.stringContaining("dev server address or /@vite/client in snippets/vite-mixer.liquid"),
+      expect.stringContaining("/@vite/client in snippets/vite-mixer.liquid"),
     ]);
   });
 
-  it("flags dev server addresses anywhere in the theme tree", () => {
+  it("flags /@vite/client for any origin but ignores bare local addresses", () => {
     const theme = makeTheme({
-      "snippets/legacy.liquid": '<script src="http://192.168.30.236:5174/src/main.ts"></script>\n',
+      "layout/theme.liquid": "<html>{% render 'vite-mixer' %}</html>\n",
+      "snippets/legacy.liquid":
+        '<script src="https://theme.trycloudflare.com/@vite/client"></script>\n',
       "assets/probe.css": "@import url('http://localhost:5173/index.css');\n",
     });
 
     expect(verifyProductionTheme(theme, "vite-mixer.liquid")).toEqual([
-      expect.stringContaining("dev server address or /@vite/client in assets/probe.css"),
-      expect.stringContaining("dev server address or /@vite/client in snippets/legacy.liquid"),
+      expect.stringContaining("/@vite/client in snippets/legacy.liquid"),
+    ]);
+  });
+
+  it("requires layout/theme.liquid to render the Mixer Snippet", () => {
+    const missingLayout = makeTheme({});
+    expect(verifyProductionTheme(missingLayout, "vite-mixer.liquid")).toEqual([
+      expect.stringContaining("layout/theme.liquid is missing"),
+    ]);
+
+    const missingRender = makeTheme({ "layout/theme.liquid": "<html></html>\n" });
+    expect(verifyProductionTheme(missingRender, "vite-mixer.liquid")).toEqual([
+      expect.stringContaining("does not render vite-mixer"),
     ]);
   });
 
   it("flags unresolved build-time alias imports in assets JS only", () => {
     const theme = makeTheme({
+      "layout/theme.liquid": "<html>{% render 'vite-mixer' %}</html>\n",
       "assets/broken.js": "import setup from '#theme/setup.js'\n",
       "assets/mentions.css": "/* '@theme/x' in a comment is not an import */\n",
     });
@@ -79,6 +98,7 @@ describe("verifyProductionTheme", () => {
   it("flags unapproved third-party CDN references", () => {
     const theme = makeTheme({
       "layout/theme.liquid":
+        "{% render 'vite-mixer' %}\n" +
         '<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper.min.js"></script>\n',
     });
 
@@ -89,6 +109,7 @@ describe("verifyProductionTheme", () => {
 
   it("ignores files outside the standard Shopify theme directories", () => {
     const theme = makeTheme({
+      "layout/theme.liquid": "<html>{% render 'vite-mixer' %}</html>\n",
       "docs/dev-notes.liquid": "preview at http://localhost:5173\n",
       ".vitify/index.css": "@import url('http://localhost:5173/index.css');\n",
       ".reference/vendor.js": "import x from '@theme/x'\n",

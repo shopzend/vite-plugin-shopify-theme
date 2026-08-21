@@ -9,10 +9,11 @@ export default function check(runtime: ThemeRuntime): Plugin {
     enforce: "pre",
     apply: "serve",
     buildStart() {
+      const context = runtime.require();
       const branches = runtime.options.devBranches;
       if (branches === false) return;
-      log.debug("check branch", { themePath: runtime.themePath, branches });
-      assertDevBranch(runtime.themePath, branches);
+      log.debug("check branch", { themePath: context.themePath, branches });
+      assertDevBranch(context.themePath, branches);
     },
   };
 }

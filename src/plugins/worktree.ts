@@ -12,32 +12,33 @@ export default function worktree(runtime: ThemeRuntime): Plugin {
     name: "shopify-theme:worktree",
     apply: "serve",
     configureServer() {
+      const context = runtime.require();
       if (runtime.options.worktree === "off") {
         log.debug("worktree: off; leaving git index untouched");
         return;
       }
-      const rel = `snippets/${runtime.snippet}`;
-      if (!isGitRepository(runtime.themePath)) {
+      const rel = `snippets/${context.snippet}`;
+      if (!isGitRepository(context.themePath)) {
         log.debug("Theme Target is not a git repository; skip-worktree is unavailable");
         return;
       }
       try {
-        const state = skipState(runtime.themePath, rel);
+        const state = skipState(context.themePath, rel);
         if (state === "untracked") {
           throw new Error(
-            `${rel} must be a tracked production Mixer Snippet. Run build, then git add it before dev.`,
+            `${rel} must be a tracked production Mixer Snippet. Run shopify-theme build --path ${context.themePath}, then git add ${rel} before dev.`,
           );
         }
-        if (mixerForm(indexFile(runtime.themePath, rel)) !== "prod") {
+        if (mixerForm(indexFile(context.themePath, rel)) !== "prod") {
           throw new Error(
-            `${rel} in the Git index is not the current production Mixer Snippet. Run build, then git add it before dev.`,
+            `${rel} in the Git index is not the current production Mixer Snippet. Run shopify-theme build --path ${context.themePath}, then git add ${rel} before dev.`,
           );
         }
         if (state === "flagged") {
           log.debug(`${rel} already skip-worktree`);
           return;
         }
-        setSkip(runtime.themePath, rel);
+        setSkip(context.themePath, rel);
         log.info(`skip-worktree set on ${rel}`);
       } catch (e) {
         throw new Error(`[shopify-theme] ${(e as Error).message}`);

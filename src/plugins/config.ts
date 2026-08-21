@@ -3,7 +3,7 @@ import { join, relative, resolve, sep } from "node:path";
 import type { Plugin } from "vite";
 import type { ThemeRuntime } from "../runtime";
 import { currentThemeRun } from "../run/context";
-import { canonicalThemePath } from "../run/theme-target";
+import { assertThemeTarget, canonicalThemePath } from "../run/theme-target";
 
 // config 钩子：解析 Theme Runtime，并注入 Theme Target 派生的 alias/watcher/build 配置。
 // 是最早的钩子，故早于读取 runtime 的 check/reload/mixer。
@@ -20,39 +20,42 @@ export default function config(runtime: ThemeRuntime): Plugin {
       const optionTarget = runtime.options.themePath
         ? canonicalThemePath(runtime.options.themePath)
         : undefined;
-      if (
-        run &&
-        optionTarget &&
-        optionTarget !== canonicalThemePath(run.themePath)
-      ) {
+      if (run && optionTarget && optionTarget !== canonicalThemePath(run.themePath)) {
         throw new Error(
           `[shopify-theme] options.themePath does not match the active Theme Run target: ${run.themePath}`,
         );
+      }
+      const target = run?.themePath ?? optionTarget;
+      if (!target && !runtime.options.entry) {
+        log.debug("Theme Target and entry deferred for config-only tooling");
+        return;
       }
       const inputEntry = required(runtime.options.entry, "entry");
       const absoluteEntry = resolve(root, inputEntry);
       const relativeEntry = relative(root, absoluteEntry);
       if (!relativeEntry || relativeEntry === ".." || relativeEntry.startsWith(`..${sep}`)) {
-        throw new Error(`[shopify-theme] entry must resolve to a file inside Vite root: ${inputEntry}`);
+        throw new Error(
+          `[shopify-theme] entry must resolve to a file inside Vite root: ${inputEntry}`,
+        );
       }
       const entry = relativeEntry.split(sep).join("/");
-      const target = run?.themePath ?? optionTarget;
       if (!target) {
         log.debug("Theme Target deferred for config-only tooling");
         return;
       }
       const themePath = canonicalThemePath(target);
-      if (run) run.snippet = runtime.snippet;
+      assertThemeTarget(themePath);
+      if (run) run.snippet = runtime.options.snippet;
 
       // snippet 已由工厂 DEFAULTS 补齐，此处直接读。
-      runtime.resolve({
+      const context = runtime.resolve({
         root,
         themePath,
         entry,
         command: env.command,
         runLockToken: run?.lockToken,
       });
-      log.debug("resolved", { root, themePath, entry, snippet: runtime.snippet });
+      log.debug("resolved", { root, themePath, entry, snippet: context.snippet });
 
       const relativeTheme = relative(root, themePath);
       const entryTop = topDirectory(relativeEntry, true);
@@ -60,7 +63,9 @@ export default function config(runtime: ThemeRuntime): Plugin {
       // 完整 watch scope；此时不做目录裁剪，交给 Vite 模块图与 reload policy 过滤事件。
       const canNarrow = relativeTheme !== "" && entryTop !== undefined;
       const kept = new Set(
-        [topDirectory(relativeTheme), entryTop].filter((item): item is string => item !== undefined),
+        [topDirectory(relativeTheme), entryTop].filter(
+          (item): item is string => item !== undefined,
+        ),
       );
       const ignored = canNarrow
         ? readdirSync(root, { withFileTypes: true })
@@ -109,10 +114,10 @@ export default function config(runtime: ThemeRuntime): Plugin {
       runtime.setLogger(resolvedConfig.logger);
     },
     buildStart() {
-      runtime.assertResolved();
+      runtime.require();
     },
     configureServer() {
-      runtime.assertResolved();
+      runtime.require();
     },
   };
 }

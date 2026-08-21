@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // mixer snippet 的 git skip-worktree 操作核，:worktree 插件与 CLI（src/cli.ts）共用。
 // git pathspec 统一用正斜杠，跨平台一致。
@@ -40,4 +42,16 @@ export function isGitRepository(cwd: string): boolean {
 
 export function indexFile(cwd: string, pathspec: string): string {
   return execFileSync("git", ["show", `:${pathspec}`], { cwd, encoding: "utf8" });
+}
+
+export function restoreIndexFile(cwd: string, pathspec: string): SkipState {
+  const state = skipState(cwd, pathspec);
+  if (state === "untracked") return state;
+  if (state === "flagged") clearSkip(cwd, pathspec);
+  try {
+    writeFileSync(resolve(cwd, pathspec), indexFile(cwd, pathspec));
+  } finally {
+    if (state === "flagged") setSkip(cwd, pathspec);
+  }
+  return state;
 }

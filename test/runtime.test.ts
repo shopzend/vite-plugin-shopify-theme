@@ -15,9 +15,11 @@ function fixture() {
   const themePath = join(root, "theme");
   mkdirSync(join(themePath, "assets"), { recursive: true });
   mkdirSync(join(themePath, "snippets"), { recursive: true });
+  mkdirSync(join(themePath, "layout"), { recursive: true });
   mkdirSync(join(root, "src"));
   mkdirSync(join(root, "other-theme"));
   writeFileSync(join(root, "src", "main.ts"), "export {}\n");
+  writeFileSync(join(themePath, "layout", "theme.liquid"), "<html></html>\n");
   return { root, themePath };
 }
 
@@ -106,6 +108,9 @@ describe("shopifyTheme", () => {
 
   it("does not narrow root directories when the theme or entry owns the Vite root", async () => {
     const themeAtRoot = fixture();
+    mkdirSync(join(themeAtRoot.root, "snippets"));
+    mkdirSync(join(themeAtRoot.root, "layout"));
+    writeFileSync(join(themeAtRoot.root, "layout", "theme.liquid"), "<html></html>\n");
     const themeConfig = await resolveConfig(
       {
         root: themeAtRoot.root,
@@ -180,6 +185,18 @@ describe("shopifyTheme", () => {
     ).rejects.toThrow(/themePath/);
   });
 
+  it("rejects an invalid Theme Target before entering the Vite lifecycle", async () => {
+    const { root } = fixture();
+    const invalid = join(root, "invalid-theme");
+    mkdirSync(invalid);
+    await expect(
+      resolveConfig(
+        { root, plugins: [shopifyTheme({ themePath: invalid, entry: "src/main.ts" })] },
+        "build",
+      ),
+    ).rejects.toThrow(/missing layout\/, missing snippets\//);
+  });
+
   it("rejects a host themePath that conflicts with the active Theme Run", async () => {
     const { root, themePath } = fixture();
     await expect(
@@ -198,7 +215,7 @@ describe("shopifyTheme", () => {
   it("accepts a host symlink that resolves to the active Theme Run target", async () => {
     const { root, themePath } = fixture();
     const alias = join(root, "theme-link");
-    symlinkSync(themePath, alias);
+    symlinkSync(themePath, alias, process.platform === "win32" ? "junction" : "dir");
     await expect(
       withinThemeRun({ themePath, lockToken: "test-lock" }, () =>
         resolveConfig(

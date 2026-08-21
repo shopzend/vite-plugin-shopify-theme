@@ -1,38 +1,53 @@
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { parseArgs } from "node:util";
+import { spawn, spawnSync } from "node:child_process";
 import pc from "picocolors";
-import { build as viteBuild, createServer, type ViteDevServer } from "vite";
+import {
+  build as viteBuild,
+  createServer,
+  resolveConfig as viteResolveConfig,
+  type ViteDevServer,
+} from "vite";
+import { mixerForm } from "./plugins/mixer";
 import { currentThemeRun, withinThemeRun } from "./run/context";
-import { canonicalThemePath } from "./run/theme-target";
+import { formatDiagnostics, inspectTheme } from "./run/doctor";
 import { acquireThemeTargetLock, ThemeTargetBusyError } from "./run/target-lock";
+import { assertThemeTarget, canonicalThemePath } from "./run/theme-target";
 import { verifyProductionTheme } from "./run/verify";
+import { indexFile, isGitRepository, restoreIndexFile, skipState } from "./utils/worktree";
 
-const USAGE = `Usage: shopify-theme <command> --theme <path> [options]
+const DEFAULT_SNIPPET = "vite-mixer.liquid";
+
+const USAGE = `Usage: shopify-theme <command> --path <theme> [Shopify CLI options]
 
 Commands:
-  dev    Run Vite and Shopify theme development together (requires --env)
-  build  Build production assets and the Mixer Snippet
-  push   Build, verify, then push the theme (requires --env)
+  dev      Run Vite and Shopify theme development together
+  build    Build and verify production assets and the Mixer Snippet
+  push     Build, verify, then run Shopify theme push
+  package  Build, verify, then run Shopify theme package
+  doctor   Inspect plugin-owned Theme Target state without changing it
+  restore  Restore the Mixer Snippet from the Git index
 
 Options:
-  --theme <path>  Shopify Theme Target
-  --env <name>    Shopify Store Environment for dev/push
-  -h, --help      Show this help
+  --path <path>  Local Shopify Theme Target
+  --json         Machine-readable doctor output; forwarded by Shopify commands
+  -h, --help     Show this help
+
+All options other than --path are forwarded unchanged by dev, push, and package.
 `;
 
 export interface ThemeRunInput {
-  mode: "dev" | "build" | "push";
+  mode: "dev" | "build" | "push" | "package" | "doctor" | "restore";
   themePath: string;
-  env?: string;
+  shopifyArgs: string[];
+  json: boolean;
 }
 
 export interface ThemeRunAdapter {
   build(this: void, input: ThemeRunInput): Promise<void>;
   dev(this: void, input: ThemeRunInput): Promise<{ close(): Promise<void> }>;
   shopify(this: void, args: string[]): Promise<number>;
+  resolveConfig?(this: void, input: ThemeRunInput): Promise<void>;
   verifyProduction?(this: void, input: ThemeRunInput): Promise<void>;
+  shopifyExecutable?(this: void): boolean;
 }
 
 class CliError extends Error {}
@@ -44,33 +59,13 @@ export async function runCli(
   try {
     const input = parseInput(argv);
     if (!input) return 0;
+    if (input.mode === "doctor") return await runDoctor(input, adapter);
+
+    assertThemeTarget(input.themePath);
     const lock = acquireThemeTargetLock(input.themePath, input.mode);
     try {
-      return await withinThemeRun(
-        { themePath: input.themePath, lockToken: lock.token },
-        async () => {
-          if (input.mode === "build") {
-            await adapter.build(input);
-            await (adapter.verifyProduction ?? verifyProduction)(input);
-            return 0;
-          }
-          if (input.mode === "push") {
-            await adapter.build(input);
-            await (adapter.verifyProduction ?? verifyProduction)(input);
-            return exitCode(
-              await adapter.shopify(["theme", "push", "--path", input.themePath, "-e", input.env!]),
-            );
-          }
-
-          const server = await adapter.dev(input);
-          try {
-            return exitCode(
-              await adapter.shopify(["theme", "dev", "--path", input.themePath, "-e", input.env!]),
-            );
-          } finally {
-            await server.close();
-          }
-        },
+      return await withinThemeRun({ themePath: input.themePath, lockToken: lock.token }, async () =>
+        runLocked(input, adapter),
       );
     } finally {
       lock.release();
@@ -84,42 +79,107 @@ export async function runCli(
   }
 }
 
-function parseInput(argv: string[]): ThemeRunInput | undefined {
-  let values: { theme?: string; env?: string; help?: boolean };
-  let positionals: string[];
-  try {
-    ({ values, positionals } = parseArgs({
-      args: argv,
-      options: {
-        theme: { type: "string" },
-        env: { type: "string" },
-        help: { type: "boolean", short: "h" },
-      },
-      allowPositionals: true,
-    }));
-  } catch (error) {
-    throw new CliError(`${(error as Error).message}\n${USAGE}`);
+async function runLocked(input: ThemeRunInput, adapter: ThemeRunAdapter): Promise<number> {
+  if (input.mode === "restore") {
+    await adapter.resolveConfig?.(input);
+    restoreMixer(input.themePath, currentThemeRun()?.snippet ?? DEFAULT_SNIPPET);
+    process.stdout.write("Mixer Snippet restored from the Git index.\n");
+    return 0;
   }
-  if (values.help) {
+
+  if (input.mode === "build") {
+    await adapter.build(input);
+    await (adapter.verifyProduction ?? verifyProduction)(input);
+    return 0;
+  }
+  if (input.mode === "push" || input.mode === "package") {
+    await adapter.build(input);
+    await (adapter.verifyProduction ?? verifyProduction)(input);
+    return exitCode(await adapter.shopify(["theme", input.mode, ...input.shopifyArgs]));
+  }
+
+  const server = await adapter.dev(input);
+  try {
+    return exitCode(await adapter.shopify(["theme", "dev", ...input.shopifyArgs]));
+  } finally {
+    await server.close();
+  }
+}
+
+async function runDoctor(input: ThemeRunInput, adapter: ThemeRunAdapter): Promise<number> {
+  return await withinThemeRun({ themePath: input.themePath, lockToken: "doctor" }, async () => {
+    let configError: string | undefined;
+    try {
+      await adapter.resolveConfig?.(input);
+    } catch (error) {
+      configError = (error as Error).message;
+    }
+    const diagnostics = inspectTheme({
+      themePath: input.themePath,
+      snippet: currentThemeRun()?.snippet ?? DEFAULT_SNIPPET,
+      configError,
+      shopifyExecutable: adapter.shopifyExecutable?.() ?? true,
+    });
+    const ok = diagnostics.every((diagnostic) => diagnostic.status !== "fail");
+    process.stdout.write(
+      input.json
+        ? `${JSON.stringify({ ok, diagnostics }, null, 2)}\n`
+        : `${formatDiagnostics(diagnostics)}\n`,
+    );
+    return ok ? 0 : 1;
+  });
+}
+
+function parseInput(argv: string[]): ThemeRunInput | undefined {
+  if (argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(USAGE);
     return undefined;
   }
-  if (positionals.length !== 1 || !["dev", "build", "push"].includes(positionals[0])) {
-    throw new CliError(`expected one command: dev, build, or push\n${USAGE}`);
+  const mode = argv[0];
+  if (!isMode(mode)) throw new CliError(`expected one command\n${USAGE}`);
+
+  let theme: string | undefined;
+  const passthrough: string[] = [];
+  for (let index = 1; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (argument === "--path") {
+      if (theme !== undefined) throw new CliError("--path may only be provided once");
+      const value = argv[index + 1];
+      if (!value || value.startsWith("-")) throw new CliError("missing value for --path");
+      theme = value;
+      index += 1;
+      continue;
+    }
+    if (argument.startsWith("--path=")) {
+      if (theme !== undefined) throw new CliError("--path may only be provided once");
+      theme = argument.slice("--path=".length);
+      if (!theme) throw new CliError("missing value for --path");
+      continue;
+    }
+    passthrough.push(argument);
   }
-  if (!values.theme) throw new CliError("missing required option: --theme");
-  if ((positionals[0] === "dev" || positionals[0] === "push") && !values.env) {
-    throw new CliError(`missing required option: --env for ${positionals[0]}`);
+  if (!theme) throw new CliError("missing required option: --path");
+  if ((mode === "build" || mode === "restore") && passthrough.length > 0) {
+    throw new CliError(`${mode} does not accept Shopify CLI options: ${passthrough.join(" ")}`);
   }
-  const unresolved = canonicalThemePath(values.theme);
-  if (!existsSync(resolve(unresolved, "snippets"))) {
-    throw new CliError(`${unresolved} has no snippets/ directory; not a Shopify theme?`);
+  if (mode === "doctor" && passthrough.some((argument) => argument !== "--json")) {
+    throw new CliError("doctor only accepts --json");
   }
+
+  const themePath = canonicalThemePath(theme);
   return {
-    mode: positionals[0] as ThemeRunInput["mode"],
-    themePath: unresolved,
-    env: values.env,
+    mode,
+    themePath,
+    shopifyArgs:
+      mode === "dev" || mode === "push" || mode === "package"
+        ? ["--path", themePath, ...passthrough]
+        : [],
+    json: passthrough.includes("--json"),
   };
+}
+
+function isMode(value: string | undefined): value is ThemeRunInput["mode"] {
+  return ["dev", "build", "push", "package", "doctor", "restore"].includes(value ?? "");
 }
 
 function exitCode(code: number): number {
@@ -130,14 +190,27 @@ function exitCode(code: number): number {
 async function verifyProduction(input: ThemeRunInput): Promise<void> {
   const failures = verifyProductionTheme(
     input.themePath,
-    currentThemeRun()?.snippet ?? "vite-mixer.liquid",
+    currentThemeRun()?.snippet ?? DEFAULT_SNIPPET,
   );
   if (failures.length > 0) throw new CliError(failures.join("\n"));
 }
 
+function restoreMixer(themePath: string, snippet: string): void {
+  if (!isGitRepository(themePath)) throw new CliError(`${themePath} is not a Git repository`);
+  const relative = `snippets/${snippet}`;
+  const state = skipState(themePath, relative);
+  if (state === "untracked") throw new CliError(`${relative} is not tracked in the Git index`);
+  if (mixerForm(indexFile(themePath, relative)) !== "prod") {
+    throw new CliError(
+      `${relative} in the Git index is not the current production Mixer Snippet. Run shopify-theme build --path ${themePath}, then git add ${relative}.`,
+    );
+  }
+  restoreIndexFile(themePath, relative);
+}
+
 const productionAdapter: ThemeRunAdapter = {
-  async build() {
-    await viteBuild();
+  async build(input) {
+    await viteBuild(input.json ? { logLevel: "silent" } : undefined);
   },
   async dev() {
     const server: ViteDevServer = await createServer();
@@ -145,14 +218,37 @@ const productionAdapter: ThemeRunAdapter = {
     server.printUrls();
     return { close: () => server.close() };
   },
+  async resolveConfig() {
+    await viteResolveConfig({}, "serve");
+  },
   async shopify(args) {
-    return await new Promise<number>((resolveExit, reject) => {
-      const child = spawn("shopify", args, { stdio: "inherit" });
-      child.once("error", reject);
-      child.once("exit", (code, signal) => {
-        if (signal) reject(new Error(`Shopify CLI terminated by ${signal}`));
-        else resolveExit(code ?? 1);
-      });
-    });
+    return await spawnShopify(args);
+  },
+  shopifyExecutable() {
+    return spawnSync("shopify", ["version"], { stdio: "ignore" }).status === 0;
   },
 };
+
+function spawnShopify(args: string[]): Promise<number> {
+  return new Promise<number>((resolveExit, reject) => {
+    const child = spawn("shopify", args, { stdio: "inherit" });
+    const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+    const listeners = signals.map((signal) => {
+      const listener = () => child.kill(signal);
+      process.once(signal, listener);
+      return { signal, listener };
+    });
+    const cleanup = () => {
+      for (const { signal, listener } of listeners) process.off(signal, listener);
+    };
+    child.once("error", (error) => {
+      cleanup();
+      reject(error);
+    });
+    child.once("exit", (code, signal) => {
+      cleanup();
+      if (signal) reject(new CliError(`Shopify CLI terminated by ${signal}`));
+      else resolveExit(code ?? 1);
+    });
+  });
+}

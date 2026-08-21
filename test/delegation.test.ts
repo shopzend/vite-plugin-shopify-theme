@@ -15,7 +15,8 @@ describe("global CLI delegation", () => {
   it("finds the nearest project-local shopify-theme from a nested directory", () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), "vpst-delegate-")));
     roots.push(root);
-    const local = join(root, "node_modules", ".bin", "shopify-theme");
+    const executable = process.platform === "win32" ? "shopify-theme.cmd" : "shopify-theme";
+    const local = join(root, "node_modules", ".bin", executable);
     const nested = join(root, "themes", "frame");
     mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
     mkdirSync(nested, { recursive: true });

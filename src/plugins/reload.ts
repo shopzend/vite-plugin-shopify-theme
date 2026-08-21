@@ -11,18 +11,16 @@ export default function reload(runtime: ThemeRuntime): Plugin {
     name: "shopify-theme:reload",
     apply: "serve",
     configureServer(server) {
+      const context = runtime.require();
       // 关闭出口：宿主想把整页刷新交给 Shopify CLI 自带的 live reload（两套同开会双重刷新）。
       if (runtime.options.reload === false) {
         log.debug("reload disabled by option");
         return;
       }
       // themePath 单目录前缀即框定主题源码，无需逐子目录白名单。
-      const themeDir = normalize(runtime.themePath);
+      const themeDir = normalize(context.themePath);
       // 额外整页 reload 目录（相对 root，可在 themePath 外）。
-      const extraDirs = runtime.options.reload.map((p) => normalize(join(runtime.root, p)));
-      // .vitify 由 HMR 接管，纳入会 HMR + full-reload 双触发，故从前缀挖掉。
-      //（.git / node_modules 被 Vite watcher 默认 ignored 兜住；assets 即 outDir，dev 下不写出，故不必挖。）
-      const vitifyDir = normalize(join(runtime.themePath, ".vitify"));
+      const extraDirs = runtime.options.reload.map((p) => normalize(join(context.root, p)));
 
       // 宿主形态下此 add 冗余（themePath 恒在 root 内，已被递归 watch 覆盖）；
       // 保留是为支持 themePath 在 root 外的契约，成本为零。
@@ -34,7 +32,7 @@ export default function reload(runtime: ThemeRuntime): Plugin {
       let timer: ReturnType<typeof setTimeout> | undefined;
       let pending: string[] = [];
       const rel = (f: string) =>
-        f.startsWith(runtime.root + sep) ? f.slice(runtime.root.length + 1) : f;
+        f.startsWith(context.root + sep) ? f.slice(context.root.length + 1) : f;
 
       const flush = () => {
         timer = undefined;
@@ -48,9 +46,10 @@ export default function reload(runtime: ThemeRuntime): Plugin {
         pending = [];
       };
 
-      const scope = { themeDir, vitifyDir, extraDirs, snippet: runtime.snippet };
+      const scope = { themeDir, extraDirs, snippet: context.snippet };
       const onChange = (file: string) => {
         const f = normalize(file);
+        if (server.environments.client.moduleGraph.getModulesByFile(f)?.size) return;
         if (!shouldReload(f, scope)) return;
         pending.push(f);
         clearTimeout(timer);
@@ -68,7 +67,7 @@ export default function reload(runtime: ThemeRuntime): Plugin {
       server.watcher.once("ready", () => {
         const watched = Object.keys(server.watcher.getWatched())
           .map((d) =>
-            d.startsWith(runtime.root + sep) ? d.slice(runtime.root.length + 1) || "." : d,
+            d.startsWith(context.root + sep) ? d.slice(context.root.length + 1) || "." : d,
           )
           .sort();
         log.debug("watched dirs", watched);

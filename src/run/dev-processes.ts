@@ -33,9 +33,7 @@ const BAR = "─".repeat(68);
 
 export function formatDevProcessWarning(procs: ShopifyDevProcess[]): string {
   const rows = procs.map((proc) =>
-    pc.yellow(
-      `   pid ${proc.pid.padStart(6)}   up ${proc.etime.padStart(11)}   ${proc.args}`,
-    ),
+    pc.yellow(`   pid ${proc.pid.padStart(6)}   up ${proc.etime.padStart(11)}   ${proc.args}`),
   );
   return [
     "",
