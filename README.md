@@ -80,6 +80,9 @@ shopify-theme restore --path theme-frame
   Mixer Snippet, the layout render tag, and the absence of `/@vite/client` in the theme tree.
 - `push` holds one run across build, production verification, and `shopify theme push`.
 - `package` applies the same build and verification gate before `shopify theme package`.
+  Packaging uses a temporary directory containing only Shopify theme directories, excluding
+  engineering instructions, tooling, source maps, and development metadata. The completed ZIP
+  is moved back to the Theme Target; the temporary directory is removed even when packaging fails.
 - `doctor` reports plugin-owned state without acquiring or repairing the target lock, changing Git,
   or connecting to a store. `--json` returns stable diagnostic codes.
 - `restore` restores the Mixer Snippet from the Git index and returns `skip-worktree` to its prior

@@ -1,4 +1,5 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -158,11 +159,18 @@ describe("shopify-theme CLI", () => {
 
   it("package holds one run across build, verification, and Shopify packaging", async () => {
     const theme = makeTheme();
+    writeFileSync(join(theme, "AGENTS.md"), "Engineering instructions\n");
     const events: string[] = [];
+    let staging = "";
     const run = adapter({
       build: async () => void events.push("build"),
       verifyProduction: async () => void events.push("verify"),
       shopify: async (args) => {
+        staging = args[3];
+        expect(staging).toContain(join(realpathSync(theme), ".shopify-theme-package-"));
+        expect(existsSync(join(staging, "AGENTS.md"))).toBe(false);
+        expect(readFileSync(join(staging, "layout", "theme.liquid"), "utf8")).toContain("vite-mixer");
+        writeFileSync(join(staging, "Formant.zip"), "archive");
         events.push(args.join(" "));
         return 0;
       },
@@ -172,8 +180,10 @@ describe("shopify-theme CLI", () => {
     expect(events).toEqual([
       "build",
       "verify",
-      `theme package --path ${realpathSync(theme)} --no-color`,
+      `theme package --path ${staging} --no-color`,
     ]);
+    expect(readFileSync(join(theme, "Formant.zip"), "utf8")).toBe("archive");
+    expect(existsSync(staging)).toBe(false);
   });
 
   it.each(["push", "package"] as const)(
