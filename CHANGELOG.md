@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-10-05
 
+- Move the repository and trusted npm publishing to the ShopZend organization.
 - Add `merge`, which merges commits for a rebuild and resolves conflicts limited to plugin build
   outputs and the Mixer Snippet.
 - `package` packages only standard theme directories and verifies the ZIP against the packaged
