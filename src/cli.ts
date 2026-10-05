@@ -9,6 +9,7 @@ import {
 import { mixerForm } from "./plugins/mixer";
 import { currentThemeRun, withinThemeRun } from "./run/context";
 import { formatDiagnostics, inspectTheme } from "./run/doctor";
+import { packageTheme, ThemePackageError } from "./run/package";
 import { acquireThemeTargetLock, ThemeTargetBusyError } from "./run/target-lock";
 import { assertThemeTarget, canonicalThemePath } from "./run/theme-target";
 import { verifyProductionTheme } from "./run/verify";
@@ -71,7 +72,11 @@ export async function runCli(
       lock.release();
     }
   } catch (error) {
-    if (error instanceof CliError || error instanceof ThemeTargetBusyError) {
+    if (
+      error instanceof CliError ||
+      error instanceof ThemeTargetBusyError ||
+      error instanceof ThemePackageError
+    ) {
       console.error(pc.red(`error: ${error.message}`));
       return 1;
     }
@@ -95,6 +100,9 @@ async function runLocked(input: ThemeRunInput, adapter: ThemeRunAdapter): Promis
   if (input.mode === "push" || input.mode === "package") {
     await adapter.build(input);
     await (adapter.verifyProduction ?? verifyProduction)(input);
+    if (input.mode === "package") {
+      return exitCode(await packageTheme(input.themePath, input.shopifyArgs, adapter.shopify));
+    }
     return exitCode(await adapter.shopify(["theme", input.mode, ...input.shopifyArgs]));
   }
 
