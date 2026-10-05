@@ -1,0 +1,74 @@
+name: Shopify theme toolchain
+description: >-
+  Check out the pinned theme toolkit, place this plugin revision in its workspace, and install
+  locked dependencies with Shopify CLI. Run from a checkout of the theme repository.
+inputs:
+  toolkit-ssh-key:
+    description: Read-only deploy key for the toolkit repository (or use toolkit-token)
+    required: false
+  toolkit-token:
+    description: Token with read access to the toolkit repository (or use toolkit-ssh-key)
+    required: false
+runs:
+  using: composite
+  steps:
+    - name: Check toolkit access
+      shell: bash
+      env:
+        TOOLKIT_SSH_KEY: ${{ inputs.toolkit-ssh-key }}
+        TOOLKIT_TOKEN: ${{ inputs.toolkit-token }}
+      run: |
+        if [[ -z "$TOOLKIT_SSH_KEY" && -z "$TOOLKIT_TOKEN" ]]; then
+          echo "::error::Pass toolkit-ssh-key or toolkit-token for the private toolkit repository."
+          exit 1
+        fi
+    - name: Read pinned versions
+      id: versions
+      shell: bash
+      run: |
+        node --input-type=module <<'JS'
+        import { readFileSync, appendFileSync } from 'node:fs';
+        const versions = JSON.parse(readFileSync('.github/toolchain/versions.json', 'utf8'));
+        for (const key of ['toolkit_repository', 'toolkit_ref', 'node_version', 'shopify_cli_version']) {
+          if (!versions[key]) throw new Error(`.github/toolchain/versions.json is missing ${key}`);
+          appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${versions[key]}\n`);
+        }
+        JS
+    - name: Checkout toolkit
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        repository: ${{ steps.versions.outputs.toolkit_repository }}
+        ref: ${{ steps.versions.outputs.toolkit_ref }}
+        path: toolkit
+        ssh-key: ${{ inputs.toolkit-ssh-key }}
+        token: ${{ inputs.toolkit-token || github.token }}
+        persist-credentials: false
+    # The plugin revision is the one this action runs from, so the caller's `uses:` pin is the
+    # only plugin version; the theme repository does not pin it separately.
+    - name: Place theme plugin
+      shell: bash
+      run: |
+        plugin_root="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        test -f "$plugin_root/package.json"
+        rm -rf toolkit/vite-plugin-shopify-theme
+        mkdir toolkit/vite-plugin-shopify-theme
+        tar -C "$plugin_root" --exclude=./.git --exclude=./node_modules -cf - . \
+          | tar -C toolkit/vite-plugin-shopify-theme -xf -
+    - name: Install Vite+
+      uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      with:
+        working-directory: toolkit
+        node-version: ${{ steps.versions.outputs.node_version }}
+        cache: false
+        run-install: false
+    - name: Install locked dependencies and Shopify CLI
+      shell: bash
+      env:
+        SHOPIFY_CLI_VERSION: ${{ steps.versions.outputs.shopify_cli_version }}
+        SHOPIFY_CLI_NO_ANALYTICS: "1"
+      run: |
+        cp .github/toolchain/pnpm-lock.yaml toolkit/pnpm-lock.yaml
+        cd toolkit
+        vp install --frozen-lockfile
+        vp install --global "@shopify/cli@$SHOPIFY_CLI_VERSION"
+        shopify version

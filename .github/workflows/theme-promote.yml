@@ -1,0 +1,68 @@
+# Reusable: fast-forward the Demo branch to a reviewed candidate after verifying that the
+# production tree rebuilds without differences. Called from a theme repository.
+name: Theme promote
+on:
+  workflow_call:
+    inputs:
+      candidate-sha:
+        description: Full SHA of the reviewed candidate commit
+        required: true
+        type: string
+      candidate-branch:
+        type: string
+        default: test
+      demo-branch:
+        type: string
+        default: main
+    secrets:
+      toolkit-ssh-key:
+        required: false
+      toolkit-token:
+        required: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: theme-demo-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      SHOPIFY_CLI_NO_ANALYTICS: "1"
+      CANDIDATE_SHA: ${{ inputs.candidate-sha }}
+      CANDIDATE_BRANCH: ${{ inputs.candidate-branch }}
+      DEMO_BRANCH: ${{ inputs.demo-branch }}
+    steps:
+      - name: Validate candidate SHA
+        run: '[[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.candidate-sha }}
+          persist-credentials: false
+      - uses: $/.github/actions/toolchain
+        with:
+          toolkit-ssh-key: ${{ secrets.toolkit-ssh-key }}
+          toolkit-token: ${{ secrets.toolkit-token }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.demo-branch }}
+          fetch-depth: 0
+          path: toolkit/theme-ci
+      - name: Select reviewed candidate
+        working-directory: toolkit/theme-ci
+        run: |
+          git fetch origin "$DEMO_BRANCH" "$CANDIDATE_BRANCH"
+          [[ "$CANDIDATE_SHA" == "$(git rev-parse "origin/$CANDIDATE_BRANCH")" ]]
+          git merge --ff-only "$CANDIDATE_SHA"
+      - name: Verify production tree is reproducible
+        working-directory: toolkit
+        run: |
+          shopify theme check --path theme-ci
+          pnpm shopify build --path theme-ci
+          git -C theme-ci diff --exit-code -- assets snippets layout
+          test -z "$(git -C theme-ci ls-files --others --exclude-standard assets snippets layout)"
+      - name: Promote to demo branch
+        working-directory: toolkit/theme-ci
+        run: |
+          git push origin "HEAD:refs/heads/$DEMO_BRANCH"
+          echo "Demo branch promoted to $(git rev-parse HEAD)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Check Shopify GitHub synchronization and the demo before tagging a release." >> "$GITHUB_STEP_SUMMARY"

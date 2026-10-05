@@ -1,0 +1,106 @@
+# Reusable: merge Demo configuration and development source into the candidate branch, rebuild
+# production assets, and push the candidate for review. Called from a theme repository.
+name: Theme build
+on:
+  workflow_call:
+    inputs:
+      theme-name:
+        description: Display name used in summaries and artifact names
+        required: true
+        type: string
+      source-branch:
+        type: string
+        default: dev
+      candidate-branch:
+        type: string
+        default: test
+      demo-branch:
+        type: string
+        default: main
+    secrets:
+      toolkit-ssh-key:
+        required: false
+      toolkit-token:
+        required: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: theme-candidate-${{ github.repository }}
+      cancel-in-progress: false
+    env:
+      SHOPIFY_CLI_NO_ANALYTICS: "1"
+      SOURCE_BRANCH: ${{ inputs.source-branch }}
+      CANDIDATE_BRANCH: ${{ inputs.candidate-branch }}
+      DEMO_BRANCH: ${{ inputs.demo-branch }}
+      THEME_NAME: ${{ inputs.theme-name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: $/.github/actions/toolchain
+        with:
+          toolkit-ssh-key: ${{ secrets.toolkit-ssh-key }}
+          toolkit-token: ${{ secrets.toolkit-token }}
+      - name: Checkout production candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.candidate-branch }}
+          fetch-depth: 0
+          path: toolkit/theme-ci
+      - name: Merge source and demo configuration
+        working-directory: toolkit
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event_name == 'push' && github.sha || '' }}
+        run: |
+          git -C theme-ci config user.name github-actions[bot]
+          git -C theme-ci config user.email github-actions[bot]@users.noreply.github.com
+          git -C theme-ci fetch origin "$SOURCE_BRANCH" "$DEMO_BRANCH" "$CANDIDATE_BRANCH"
+          source_sha="${SOURCE_SHA:-$(git -C theme-ci rev-parse "origin/$SOURCE_BRANCH")}"
+          demo_sha="$(git -C theme-ci rev-parse "origin/$DEMO_BRANCH")"
+          echo "THEME_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+          echo "THEME_DEMO_SHA=$demo_sha" >> "$GITHUB_ENV"
+          {
+            echo "### Candidate merge"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          pnpm --silent shopify merge --path theme-ci "$demo_sha" "$source_sha" 2>&1 \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Check and build production assets
+        working-directory: toolkit
+        run: |
+          shopify theme check --path theme-ci --output json > "$RUNNER_TEMP/theme-check.json"
+          pnpm shopify build --path theme-ci
+      - name: Commit production assets to candidate
+        working-directory: toolkit/theme-ci
+        run: |
+          git add -- assets snippets layout
+          if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            git commit -m "Build $THEME_NAME production candidate"
+          elif ! git diff --cached --quiet; then
+            git commit -m "Build $THEME_NAME production assets"
+          fi
+          git push origin "HEAD:refs/heads/$CANDIDATE_BRANCH"
+          candidate="$(git rev-parse HEAD)"
+          {
+            echo "### $THEME_NAME candidate"
+            echo "Source: $THEME_SOURCE_SHA"
+            echo "Demo: $THEME_DEMO_SHA"
+            echo "Candidate commit: $candidate"
+            echo "Review this exact commit before running the promote workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Note missing validation report
+        if: failure()
+        run: |
+          if [[ ! -f "$RUNNER_TEMP/theme-check.json" ]]; then
+            echo "Validation report was not generated; the run stopped before Theme Check. See the first failed step." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Save validation report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: theme-check-${{ github.run_id }}
+          path: ${{ runner.temp }}/theme-check.json
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'ignore' }}
