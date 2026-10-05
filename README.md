@@ -72,6 +72,7 @@ shopify-theme package --path theme-frame
 shopify-theme doctor  --path theme-frame
 shopify-theme doctor  --path theme-frame --json
 shopify-theme restore --path theme-frame
+shopify-theme merge   --path theme-ci <demo-sha> <source-sha>
 ```
 
 - `dev` starts Vite, runs `shopify theme dev`, forwards termination signals, and closes Vite after
@@ -87,11 +88,16 @@ shopify-theme restore --path theme-frame
   or connecting to a store. `--json` returns stable diagnostic codes.
 - `restore` restores the Mixer Snippet from the Git index and returns `skip-worktree` to its prior
   state so the clean theme can safely switch branches.
+- `merge` merges full commit SHAs into the current branch in order, committing every merge except
+  the last so the following `build` output joins its merge commit. Conflicts limited to plugin
+  build outputs and the Mixer Snippet take the current branch's version (or its absence) and are
+  listed; the rebuild replaces them. Any other conflict, or a Git failure before a conflict state,
+  fails the command.
 
 The CLI parses only the command and local `--path`. For `dev`, `push`, and `package`, every other
 argument is passed unchanged to Shopify CLI; Shopify remains the source of truth for environments,
 stores, remote Theme IDs, authentication, and option validation. `build` and `restore` accept no
-Shopify options, while `doctor` accepts only `--json`.
+Shopify options, `doctor` accepts only `--json`, and `merge` accepts only commit SHAs.
 
 Version 0.1 intentionally removes the old local `--theme` / forced `--env` interface and the
 `devHost` option. Migrate to `--path`, Shopify CLI's native `--environment`, and `devOrigin`; there

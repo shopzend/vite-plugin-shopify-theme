@@ -9,6 +9,7 @@ import {
 import { mixerForm } from "./plugins/mixer";
 import { currentThemeRun, withinThemeRun } from "./run/context";
 import { formatDiagnostics, inspectTheme } from "./run/doctor";
+import { mergeCommits, ThemeMergeError } from "./run/merge";
 import { packageTheme, ThemePackageError } from "./run/package";
 import { acquireThemeTargetLock, ThemeTargetBusyError } from "./run/target-lock";
 import { assertThemeTarget, canonicalThemePath } from "./run/theme-target";
@@ -18,6 +19,7 @@ import { indexFile, isGitRepository, restoreIndexFile, skipState } from "./utils
 const DEFAULT_SNIPPET = "vite-mixer.liquid";
 
 const USAGE = `Usage: shopify-theme <command> --path <theme> [Shopify CLI options]
+       shopify-theme merge --path <theme> <commit>...
 
 Commands:
   dev      Run Vite and Shopify theme development together
@@ -26,6 +28,7 @@ Commands:
   package  Build, verify, then run Shopify theme package
   doctor   Inspect plugin-owned Theme Target state without changing it
   restore  Restore the Mixer Snippet from the Git index
+  merge    Merge full commit SHAs in order, resolving generated-file conflicts for a rebuild
 
 Options:
   --path <path>  Local Shopify Theme Target
@@ -36,9 +39,10 @@ All options other than --path are forwarded unchanged by dev, push, and package.
 `;
 
 export interface ThemeRunInput {
-  mode: "dev" | "build" | "push" | "package" | "doctor" | "restore";
+  mode: "dev" | "build" | "push" | "package" | "doctor" | "restore" | "merge";
   themePath: string;
   shopifyArgs: string[];
+  commits: string[];
   json: boolean;
 }
 
@@ -75,7 +79,8 @@ export async function runCli(
     if (
       error instanceof CliError ||
       error instanceof ThemeTargetBusyError ||
-      error instanceof ThemePackageError
+      error instanceof ThemePackageError ||
+      error instanceof ThemeMergeError
     ) {
       console.error(pc.red(`error: ${error.message}`));
       return 1;
@@ -89,6 +94,24 @@ async function runLocked(input: ThemeRunInput, adapter: ThemeRunAdapter): Promis
     await adapter.resolveConfig?.(input);
     restoreMixer(input.themePath, currentThemeRun()?.snippet ?? DEFAULT_SNIPPET);
     process.stdout.write("Mixer Snippet restored from the Git index.\n");
+    return 0;
+  }
+
+  if (input.mode === "merge") {
+    await adapter.resolveConfig?.(input);
+    if (!isGitRepository(input.themePath)) {
+      throw new CliError(`${input.themePath} is not a Git repository`);
+    }
+    const resolved = mergeCommits(
+      input.themePath,
+      input.commits,
+      currentThemeRun()?.snippet ?? DEFAULT_SNIPPET,
+    );
+    process.stdout.write(
+      resolved.length > 0
+        ? `Generated files resolved to the current branch before rebuild:\n${resolved.map((path) => `- ${path}`).join("\n")}\n`
+        : "No generated file conflicts.\n",
+    );
     return 0;
   }
 
@@ -173,6 +196,13 @@ function parseInput(argv: string[]): ThemeRunInput | undefined {
   if (mode === "doctor" && passthrough.some((argument) => argument !== "--json")) {
     throw new CliError("doctor only accepts --json");
   }
+  if (mode === "merge") {
+    if (passthrough.length === 0) throw new CliError("merge requires at least one commit SHA");
+    const invalid = passthrough.filter((argument) => !/^[0-9a-f]{40}$/.test(argument));
+    if (invalid.length > 0) {
+      throw new CliError(`merge only accepts full commit SHAs: ${invalid.join(" ")}`);
+    }
+  }
 
   const themePath = canonicalThemePath(theme);
   return {
@@ -183,11 +213,12 @@ function parseInput(argv: string[]): ThemeRunInput | undefined {
         ? ["--path", themePath, ...passthrough]
         : [],
     json: passthrough.includes("--json"),
+    commits: mode === "merge" ? passthrough : [],
   };
 }
 
 function isMode(value: string | undefined): value is ThemeRunInput["mode"] {
-  return ["dev", "build", "push", "package", "doctor", "restore"].includes(value ?? "");
+  return ["dev", "build", "push", "package", "doctor", "restore", "merge"].includes(value ?? "");
 }
 
 function exitCode(code: number): number {

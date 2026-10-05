@@ -5,6 +5,12 @@ import type { ThemeRuntime } from "../runtime";
 import { currentThemeRun } from "../run/context";
 import { assertThemeTarget, canonicalThemePath } from "../run/theme-target";
 
+// 插件在 assets/ 中输出的文件：entry 稳定名与 `vite-mixer.*` 内容寻址产物（命名见下方
+// rolldownOptions.output）。CLI merge 据此识别可由重建替代的生成文件，改命名须同步。
+export function isBuildOutputAsset(file: string): boolean {
+  return /^vite-mixer(?:\..+)?\.(?:js|css)$/.test(file);
+}
+
 // config 钩子：解析 Theme Runtime，并注入 Theme Target 派生的 alias/watcher/build 配置。
 // 是最早的钩子，故早于读取 runtime 的 check/reload/mixer。
 // 注：Vite 此前已解析完用户插件，无法在此再注入插件——插件由工厂（index.ts）直接返回。

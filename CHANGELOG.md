@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `merge`, which merges commits for a rebuild and resolves conflicts limited to plugin build
+  outputs and the Mixer Snippet.
+
 ## 0.1.0 - 2026-08-21
 
 - Deepen Theme Runtime resolution and validation.
