@@ -1,0 +1,116 @@
+# Reusable: package a version tag on the Demo branch, verify the archive and the tracked runtime
+# files, and save the ZIP with its manifest as a draft release. Called from a theme repository.
+name: Theme package
+on:
+  workflow_call:
+    inputs:
+      theme-name:
+        description: Display name used in the release title and artifact name
+        required: true
+        type: string
+      tag:
+        description: Version tag to package; defaults to the pushed tag
+        type: string
+        default: ""
+      demo-branch:
+        type: string
+        default: main
+    secrets:
+      toolkit-ssh-key:
+        required: false
+      toolkit-token:
+        required: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: theme-package-${{ github.repository }}-${{ inputs.tag || github.ref }}
+      cancel-in-progress: false
+    env:
+      SHOPIFY_CLI_NO_ANALYTICS: "1"
+      RELEASE_REF: ${{ inputs.tag || github.ref }}
+      DEMO_BRANCH: ${{ inputs.demo-branch }}
+      THEME_NAME: ${{ inputs.theme-name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate version tag
+        run: |
+          tag="${RELEASE_REF#refs/tags/}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - uses: $/.github/actions/toolchain
+        with:
+          toolkit-ssh-key: ${{ secrets.toolkit-ssh-key }}
+          toolkit-token: ${{ secrets.toolkit-token }}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          path: toolkit/theme-ci
+          persist-credentials: false
+      - name: Check release provenance and version
+        working-directory: toolkit/theme-ci
+        run: |
+          git merge-base --is-ancestor HEAD "origin/$DEMO_BRANCH"
+          version="$(jq -r '.[0].theme_version' config/settings_schema.json)"
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "::error::Tag $RELEASE_TAG does not match theme_version $version."
+            exit 1
+          fi
+      - name: Build, package, and verify the archive
+        working-directory: toolkit
+        run: |
+          shopify theme check --path theme-ci
+          pnpm shopify package --path theme-ci
+      - name: Verify tracked runtime files and write the manifest
+        working-directory: toolkit/theme-ci
+        run: |
+          dirs=(assets blocks config layout listings locales sections snippets templates)
+          git diff --exit-code -- "${dirs[@]}"
+          test -z "$(git ls-files --others --exclude-standard -- "${dirs[@]}")"
+          # The package command excludes development entries; tracked ones would be missing
+          # from the archive, so the tracked set must not contain any.
+          development="$(git ls-files -- "${dirs[@]}" | grep -E '\.map$|(^|/)(\.vitify|\.reference|__MACOSX)(/|$)|(^|/)\.DS_Store$' || true)"
+          if [[ -n "$development" ]]; then
+            echo "::error::Tracked development entries are excluded from the package:"
+            echo "$development"
+            exit 1
+          fi
+          shopt -s nullglob
+          archives=(*.zip)
+          if [[ ${#archives[@]} -ne 1 ]]; then
+            echo "::error::Expected exactly one theme ZIP, found ${#archives[@]}."
+            exit 1
+          fi
+          files="$(git ls-files -z -- "${dirs[@]}" | xargs -0 sha256sum \
+            | jq -R -n '[inputs | capture("^(?<hash>[0-9a-f]{64})  (?<path>.+)$") | {(.path): .hash}] | add // {}')"
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg commit "$(git rev-parse HEAD)" \
+            --arg workflow "$GITHUB_WORKFLOW_REF" \
+            --arg zip "$(sha256sum "${archives[0]}" | cut -d' ' -f1)" \
+            --slurpfile toolchain .github/toolchain/versions.json \
+            --argjson files "$files" \
+            '{tag: $tag, commit: $commit, workflow: $workflow, toolchain: $toolchain[0], zip_sha256: $zip, files: $files}' \
+            > release-manifest.json
+          echo "Verified $(jq '.files | length' release-manifest.json) runtime files in ${archives[0]}."
+      - name: Save release package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.theme-name }}-${{ env.RELEASE_TAG }}
+          path: |
+            toolkit/theme-ci/*.zip
+            toolkit/theme-ci/release-manifest.json
+          if-no-files-found: error
+      - name: Create draft release
+        working-directory: toolkit/theme-ci
+        run: |
+          gh release create "$RELEASE_TAG" ./*.zip release-manifest.json \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "$THEME_NAME $RELEASE_TAG" \
+            --notes "Package built from the tagged ${DEMO_BRANCH} commit. Store submission requires separate acceptance."
