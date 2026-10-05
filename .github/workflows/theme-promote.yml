@@ -4,6 +4,14 @@ name: Theme promote
 on:
   workflow_call:
     inputs:
+      toolkit-repo:
+        description: Repository containing the theme build workspace
+        required: true
+        type: string
+      toolkit-ref:
+        description: Branch, tag, or commit of the toolkit repository
+        type: string
+        default: main
       candidate-sha:
         description: Full SHA of the reviewed candidate commit
         required: true
@@ -34,15 +42,17 @@ jobs:
     steps:
       - name: Validate candidate SHA
         run: '[[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]'
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.candidate-sha }}
           persist-credentials: false
       - uses: $/.github/actions/toolchain
         with:
+          toolkit-repo: ${{ inputs.toolkit-repo }}
+          toolkit-ref: ${{ inputs.toolkit-ref }}
           toolkit-ssh-key: ${{ secrets.toolkit-ssh-key }}
           toolkit-token: ${{ secrets.toolkit-token }}
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.demo-branch }}
           fetch-depth: 0

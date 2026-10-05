@@ -1,14 +1,25 @@
 name: Shopify theme toolchain
 description: >-
-  Check out the pinned theme toolkit, place this plugin revision in its workspace, and install
+  Check out the caller's theme toolkit, place this plugin revision in its workspace, and install
   locked dependencies with Shopify CLI. Run from a checkout of the theme repository.
 inputs:
+  toolkit-repo:
+    description: Repository containing the theme build workspace
+    required: true
+  toolkit-ref:
+    description: Branch, tag, or commit of the toolkit repository
+    required: false
+    default: main
   toolkit-ssh-key:
     description: Read-only deploy key for the toolkit repository (or use toolkit-token)
     required: false
   toolkit-token:
     description: Token with read access to the toolkit repository (or use toolkit-ssh-key)
     required: false
+outputs:
+  toolchain-file:
+    description: Actual toolkit commit, installed tool versions, and dependency lockfile digest
+    value: ${{ steps.toolchain.outputs.file }}
 runs:
   using: composite
   steps:
@@ -22,23 +33,11 @@ runs:
           echo "::error::Pass toolkit-ssh-key or toolkit-token for the private toolkit repository."
           exit 1
         fi
-    - name: Read pinned versions
-      id: versions
-      shell: bash
-      run: |
-        node --input-type=module <<'JS'
-        import { readFileSync, appendFileSync } from 'node:fs';
-        const versions = JSON.parse(readFileSync('.github/toolchain/versions.json', 'utf8'));
-        for (const key of ['toolkit_repository', 'toolkit_ref', 'node_version', 'shopify_cli_version']) {
-          if (!versions[key]) throw new Error(`.github/toolchain/versions.json is missing ${key}`);
-          appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${versions[key]}\n`);
-        }
-        JS
     - name: Checkout toolkit
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      uses: actions/checkout@v7.0.1
       with:
-        repository: ${{ steps.versions.outputs.toolkit_repository }}
-        ref: ${{ steps.versions.outputs.toolkit_ref }}
+        repository: ${{ inputs.toolkit-repo }}
+        ref: ${{ inputs.toolkit-ref }}
         path: toolkit
         ssh-key: ${{ inputs.toolkit-ssh-key }}
         token: ${{ inputs.toolkit-token || github.token }}
@@ -55,20 +54,43 @@ runs:
         tar -C "$plugin_root" --exclude=./.git --exclude=./node_modules -cf - . \
           | tar -C toolkit/vite-plugin-shopify-theme -xf -
     - name: Install Vite+
-      uses: voidzero-dev/setup-vp@3754dd7dbdb32bd8f6d28b6043de13ad3a75f21f # v1.21.1
+      uses: voidzero-dev/setup-vp@v1.21.1
       with:
         working-directory: toolkit
-        node-version: ${{ steps.versions.outputs.node_version }}
         cache: false
         run-install: false
     - name: Install locked dependencies and Shopify CLI
       shell: bash
       env:
-        SHOPIFY_CLI_VERSION: ${{ steps.versions.outputs.shopify_cli_version }}
         SHOPIFY_CLI_NO_ANALYTICS: "1"
       run: |
-        cp .github/toolchain/pnpm-lock.yaml toolkit/pnpm-lock.yaml
         cd toolkit
         vp install --frozen-lockfile
-        vp install --global "@shopify/cli@$SHOPIFY_CLI_VERSION"
+        vp install --global @shopify/cli@latest
         shopify version
+    - name: Record installed toolchain
+      id: toolchain
+      working-directory: toolkit
+      shell: bash
+      env:
+        TOOLKIT_REPO: ${{ inputs.toolkit-repo }}
+        TOOLKIT_REF: ${{ inputs.toolkit-ref }}
+        SHOPIFY_CLI_NO_ANALYTICS: "1"
+      run: |
+        node --input-type=module <<'JS'
+        import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+        import { execFileSync } from 'node:child_process';
+        import { createHash } from 'node:crypto';
+        import { join } from 'node:path';
+        const file = join(process.env.RUNNER_TEMP, 'theme-toolchain.json');
+        const toolchain = {
+          toolkit_repository: process.env.TOOLKIT_REPO,
+          toolkit_ref: process.env.TOOLKIT_REF,
+          toolkit_sha: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+          node_version: process.versions.node,
+          shopify_cli_version: execFileSync('shopify', ['version'], { encoding: 'utf8' }).trim(),
+          lockfile_sha256: createHash('sha256').update(readFileSync('pnpm-lock.yaml')).digest('hex'),
+        };
+        writeFileSync(file, `${JSON.stringify(toolchain, null, 2)}\n`);
+        appendFileSync(process.env.GITHUB_OUTPUT, `file=${file}\n`);
+        JS

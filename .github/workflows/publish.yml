@@ -21,9 +21,9 @@ jobs:
       contents: read
       id-token: write # npm Trusted Publishing OIDC
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@v1.21.1
         with:
           node-version: "24"
 

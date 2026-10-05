@@ -4,6 +4,14 @@ name: Theme package
 on:
   workflow_call:
     inputs:
+      toolkit-repo:
+        description: Repository containing the theme build workspace
+        required: true
+        type: string
+      toolkit-ref:
+        description: Branch, tag, or commit of the toolkit repository
+        type: string
+        default: main
       theme-name:
         description: Display name used in the release title and artifact name
         required: true
@@ -39,15 +47,18 @@ jobs:
           tag="${RELEASE_REF#refs/tags/}"
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
       - uses: $/.github/actions/toolchain
+        id: toolchain
         with:
+          toolkit-repo: ${{ inputs.toolkit-repo }}
+          toolkit-ref: ${{ inputs.toolkit-ref }}
           toolkit-ssh-key: ${{ secrets.toolkit-ssh-key }}
           toolkit-token: ${{ secrets.toolkit-token }}
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
           fetch-depth: 0
@@ -69,6 +80,8 @@ jobs:
           pnpm shopify package --path theme-ci
       - name: Verify tracked runtime files and write the manifest
         working-directory: toolkit/theme-ci
+        env:
+          TOOLCHAIN_FILE: ${{ steps.toolchain.outputs.toolchain-file }}
         run: |
           dirs=(assets blocks config layout listings locales sections snippets templates)
           git diff --exit-code -- "${dirs[@]}"
@@ -94,13 +107,13 @@ jobs:
             --arg commit "$(git rev-parse HEAD)" \
             --arg workflow "$GITHUB_WORKFLOW_REF" \
             --arg zip "$(sha256sum "${archives[0]}" | cut -d' ' -f1)" \
-            --slurpfile toolchain .github/toolchain/versions.json \
+            --slurpfile toolchain "$TOOLCHAIN_FILE" \
             --argjson files "$files" \
             '{tag: $tag, commit: $commit, workflow: $workflow, toolchain: $toolchain[0], zip_sha256: $zip, files: $files}' \
             > release-manifest.json
           echo "Verified $(jq '.files | length' release-manifest.json) runtime files in ${archives[0]}."
       - name: Save release package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ inputs.theme-name }}-${{ env.RELEASE_TAG }}
           path: |

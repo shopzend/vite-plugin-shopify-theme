@@ -207,6 +207,21 @@ Without splitting the build keeps the flat single-file shape. With splitting:
   hand-author assets under such names. Committed chunk files change across builds; commit the
   deletions together with the new outputs.
 
+## Theme CI
+
+Theme repositories call the shared [build](.github/workflows/theme-build.yml),
+[promote](.github/workflows/theme-promote.yml), and [package](.github/workflows/theme-package.yml)
+workflows. The caller's workflow reference selects the plugin revision. Each caller supplies its
+toolkit repository through the workflow inputs; the [toolchain action](.github/actions/toolchain/action.yml)
+checks out that workspace and uses its own dependency lockfile. Themes do not maintain separate
+toolchain configuration files or lockfile copies.
+
+Each toolkit must maintain a lockfile matching its own dependency declarations and the selected
+plugin's [dependency declarations](package.json). Verify a frozen install after either changes.
+Node selection is delegated to Vite+, and Shopify CLI is installed from the latest release.
+The package workflow records the actual toolkit commit, Node and CLI versions, and lockfile digest
+in the release manifest.
+
 ## Development
 
 ```bash
