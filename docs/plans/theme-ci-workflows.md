@@ -65,7 +65,7 @@ review-after: 2026-11-05
 | `.github/actions/toolchain/action.yml` | 来自参考主题的工具链 Action：检出工具层、放置插件源码、安装 Vite+、冻结安装依赖、安装 Shopify CLI |
 | `.github/workflows/theme-build.yml`    | 来自参考主题构建：合并、Theme Check、构建、提交候选、摘要与检查报告                               |
 | `.github/workflows/theme-promote.yml`  | 来自参考主题晋升：候选仍为当前版本、快进、重建无差异、推送 Demo 分支                              |
-| `.github/workflows/theme-package.yml`  | 来自参考主题打包：tag 校验、来源校验、打包、包内容校验、草稿 Release                              |
+| `.github/workflows/theme-package.yml`  | 来自参考主题打包：tag 校验、来源校验、打包、包内容校验、正式 Release                              |
 
 包内容校验按职责拆分：ZIP 与打包文件逐项、逐字节一致由 `package` 子命令负责，本地打包同样受益；tag 与 `theme_version` 一致、来源在 Demo 分支、工作树等于跟踪文件、跟踪集中不含开发条目及发布清单由打包工作流负责，它们属于发布编排而非插件行为。工作流中不另放脚本文件。插件源码从复合 Action 所在的仓库副本放入工具层 workspace 后再安装，安装后在 CI 中构建插件。
 

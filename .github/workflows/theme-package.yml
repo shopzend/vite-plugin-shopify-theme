@@ -1,5 +1,5 @@
 # Reusable: package a version tag on the Demo branch, verify the archive and the tracked runtime
-# files, and save the ZIP with its manifest as a draft release. Called from a theme repository.
+# files, and save the ZIP with its manifest as a release. Called from a theme repository.
 name: Theme package
 on:
   workflow_call:
@@ -120,10 +120,10 @@ jobs:
             toolkit/theme-ci/*.zip
             toolkit/theme-ci/release-manifest.json
           if-no-files-found: error
-      - name: Create draft release
+      - name: Create release
         working-directory: toolkit/theme-ci
         run: |
           gh release create "$RELEASE_TAG" ./*.zip release-manifest.json \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "$THEME_NAME $RELEASE_TAG" \
             --notes "Package built from the tagged ${DEMO_BRANCH} commit. Store submission requires separate acceptance."
