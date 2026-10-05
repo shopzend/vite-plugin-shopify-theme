@@ -44,4 +44,20 @@ describe("Shopify dev process policy", () => {
     expect(warning).not.toContain("this one");
     for (const process of processes) expect(warning).toContain(`pid ${process.pid.padStart(6)}`);
   });
+
+  it("shows the pending run separately from existing processes and the stop command", () => {
+    const warning = formatDevProcessWarning(parseShopifyDevProcesses(PS), [
+      "theme",
+      "dev",
+      "--path",
+      "theme-eu",
+      "-e",
+      "hbada-eu",
+    ]);
+    expect(warning).toContain("3 shopify dev processes already exist");
+    expect(warning).toContain(
+      "pending   shopify theme dev --path theme-eu -e hbada-eu  ← this one (not started yet)",
+    );
+    expect(warning).toContain("kill 17849 74202 33150");
+  });
 });

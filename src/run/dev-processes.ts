@@ -31,7 +31,7 @@ export function parseShopifyDevProcesses(psOutput: string): ShopifyDevProcess[] 
 
 const BAR = "─".repeat(68);
 
-export function formatDevProcessWarning(procs: ShopifyDevProcess[]): string {
+export function formatDevProcessWarning(procs: ShopifyDevProcess[], devArgs?: string[]): string {
   const rows = procs.map((proc) =>
     pc.yellow(`   pid ${proc.pid.padStart(6)}   up ${proc.etime.padStart(11)}   ${proc.args}`),
   );
@@ -43,6 +43,9 @@ export function formatDevProcessWarning(procs: ShopifyDevProcess[]): string {
     ),
     pc.yellow(BAR),
     ...rows,
+    ...(devArgs
+      ? [pc.dim(`   pending   shopify ${devArgs.join(" ")}  ← this one (not started yet)`)]
+      : []),
     "",
     pc.dim("   One account-wide API rate limit is shared by all of them. Measured with"),
     pc.dim("   4 concurrent: page load 4.2s → 6.7s, plus 429 (store) / 502 (CLI proxy)."),

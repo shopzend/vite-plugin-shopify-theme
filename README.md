@@ -83,9 +83,11 @@ shopify-theme merge   --path theme-ci <demo-sha> <source-sha>
 - `package` applies the same build and verification gate, packages only the standard theme
   directories without development entries, and fails before delivering the ZIP unless its entries
   match the packaged files byte for byte.
-  Packaging uses a temporary directory containing only Shopify theme directories, excluding
+  The [packaging boundary](src/run/package.ts) uses a temporary directory containing only Shopify
+  theme directories, excluding
   engineering instructions, tooling, source maps, and development metadata. The completed ZIP
-  is moved back to the Theme Target; the temporary directory is removed even when packaging fails.
+  is moved back to the Theme Target and its final path is reported; the temporary directory is
+  removed even when packaging fails.
 - `doctor` reports plugin-owned state without acquiring or repairing the target lock, changing Git,
   or connecting to a store. `--json` returns stable diagnostic codes.
 - `restore` restores the Mixer Snippet from the Git index and returns `skip-worktree` to its prior

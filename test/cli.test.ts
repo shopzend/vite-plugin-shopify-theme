@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { crc32 } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli, type ThemeRunAdapter } from "../src/cli";
+import { currentThemeRun } from "../src/run/context";
 
 let dirs: string[] = [];
 let errors: string[] = [];
@@ -254,6 +255,22 @@ describe("shopify-theme CLI", () => {
     expect(await runCli(["dev", "--path", theme], run)).toBe(1);
     expect(events).toEqual(["shopify", "close"]);
     expect(errors.join("\n")).toContain("Shopify CLI exited with code 7");
+  });
+
+  it("exposes the pending Shopify command before Vite starts", async () => {
+    const theme = makeTheme();
+    let pending: string[] | undefined;
+    const run = adapter({
+      dev: async () => {
+        pending = currentThemeRun()?.devArgs;
+        expect(run.shopify).not.toHaveBeenCalled();
+        return { close: async () => {} };
+      },
+    });
+    expect(await runCli(["dev", "--path", theme, "-e", "hbada-eu"], run)).toBe(0);
+    expect(pending).toEqual(expect.arrayContaining(["theme", "dev", "-e", "hbada-eu"]));
+    expect(run.shopify).toHaveBeenCalledWith(pending);
+    expect(currentThemeRun()).toBeUndefined();
   });
 
   it("keeps push JSON stdout machine-readable", async () => {

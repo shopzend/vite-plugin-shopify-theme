@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-shopify-theme",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Wire a standard Shopify theme into Vite — HMR dev server + production bundle-metadata→snippet injection.",
   "keywords": [
     "hmr",
@@ -52,22 +52,15 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.4",
     "jiti": "^2.7.0",
-    "obuild": "^0.4.38",
+    "obuild": "^0.4.43",
     "typescript": "^7.0.2",
-    "vite": "^8.2.1",
-    "vitest": "^4.1.11"
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
   },
   "peerDependencies": {
     "vite": "^8.0.0"
-  },
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "11.22.0",
-      "onFail": "warn"
-    }
   },
   "engines": {
     "node": ">=22.14.0"

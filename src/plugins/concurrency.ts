@@ -1,6 +1,7 @@
 import type { Plugin } from "vite";
 import type { ThemeRuntime } from "../runtime";
 import { formatDevProcessWarning, listShopifyDevProcesses } from "../run/dev-processes";
+import { currentThemeRun } from "../run/context";
 
 interface ConcurrencySystem {
   platform: NodeJS.Platform;
@@ -43,7 +44,7 @@ export default function concurrency(
 
       log.debug(`found ${procs.length} pre-existing shopify dev process(es), max ${max}`);
       if (procs.length <= max) return;
-      log.warn(formatDevProcessWarning(procs));
+      log.warn(formatDevProcessWarning(procs, currentThemeRun()?.devArgs));
     },
   };
 }

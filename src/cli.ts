@@ -25,7 +25,7 @@ Commands:
   dev      Run Vite and Shopify theme development together
   build    Build and verify production assets and the Mixer Snippet
   push     Build, verify, then run Shopify theme push
-  package  Build, verify, then run Shopify theme package
+  package  Build, verify, and package standard theme directories into a ZIP
   doctor   Inspect plugin-owned Theme Target state without changing it
   restore  Restore the Mixer Snippet from the Git index
   merge    Merge full commit SHAs in order, resolving generated-file conflicts for a rebuild
@@ -129,6 +129,8 @@ async function runLocked(input: ThemeRunInput, adapter: ThemeRunAdapter): Promis
     return exitCode(await adapter.shopify(["theme", input.mode, ...input.shopifyArgs]));
   }
 
+  const run = currentThemeRun();
+  if (run) run.devArgs = ["theme", "dev", ...input.shopifyArgs];
   const server = await adapter.dev(input);
   try {
     return exitCode(await adapter.shopify(["theme", "dev", ...input.shopifyArgs]));

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 - 2026-10-05
+
+- Show the pending Shopify development command separately from existing processes in concurrency
+  warnings, before the new process starts.
+- Clarify the CLI packaging help and document the packaging boundary and final ZIP path.
+- Update development dependencies and their lockfile; remove the package manager version warning.
+
 ## 0.1.1 - 2026-10-05
 
 - Move the repository and trusted npm publishing to the ShopZend organization.
