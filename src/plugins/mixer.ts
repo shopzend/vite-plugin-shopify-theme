@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, Rolldown } from "vite";
 import type { ThemeRuntime } from "../runtime";
 import { resolveDevOrigin } from "../run/dev-origin";
 import { clearSkip, isGitRepository, skipState } from "../utils/worktree";
@@ -64,7 +64,7 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
     }
     const name = renderName(context.snippet);
     const content = readFileSync(layout, "utf8");
-    if (new RegExp(`\\{%-?\\s*render\\s+['"]${escapeRegExp(name)}['"]`).test(content)) {
+    if (rendersSnippet(content, context.snippet)) {
       log.debug(`render tag already present in layout/theme.liquid`);
       return;
     }
@@ -125,17 +125,32 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
       // 每个 entry chunk：CSS 最前（渲染阻塞，越早进预扫描越好），随后预载其静态依赖
       // chunk（codeSplitting 拆出的初始 chunk，动态 import 不预载），最后 entry JS
       //（module script 天然 defer，放后无损）。
+      // 静态依赖须递归收集：依赖 chunk 的 CSS 记在该 chunk 自己的 importedCss 上，preload
+      // helper 只处理动态 import，snippet 漏掉即首屏缺样式。参见
+      // https://vite.dev/guide/backend-integration
       // viteMetadata 由 Vite build 管线填充，enforce:"post" 确保此时已就绪。
-      const preloaded = new Set<string>();
+      const visited = new Set<string>();
       for (const output of Object.values(bundle)) {
         if (output.type !== "chunk" || !output.isEntry) continue;
-        output.viteMetadata?.importedCss.forEach((file) => tags.push(stylesheetTag(file)));
-        for (const file of output.imports) {
-          if (preloaded.has(file)) continue;
-          preloaded.add(file);
-          tags.push(modulePreloadTag(file));
-        }
-        tags.push(scriptTag(output.fileName));
+        const css: string[] = [];
+        const preloads: string[] = [];
+        // 后序遍历：依赖的 CSS 先于引用方，与 Vite HTML 注入顺序一致；visited 跨 entry 去重并防环。
+        const visit = (chunk: Rolldown.OutputChunk): void => {
+          if (visited.has(chunk.fileName)) return;
+          visited.add(chunk.fileName);
+          for (const file of chunk.imports) {
+            const dependency = bundle[file];
+            if (dependency?.type === "chunk") visit(dependency);
+          }
+          chunk.viteMetadata?.importedCss.forEach((file) => css.push(file));
+          if (chunk !== output) preloads.push(chunk.fileName);
+        };
+        visit(output);
+        tags.push(
+          ...css.map(stylesheetTag),
+          ...preloads.map(modulePreloadTag),
+          scriptTag(output.fileName),
+        );
       }
 
       if (tags.length === 0) {
@@ -168,8 +183,24 @@ export function renderName(snippet: string): string {
   return snippet.replace(/\.liquid$/, "");
 }
 
+// layout 是否以可执行的 render 标签引用 Mixer Snippet：先剔除 Liquid 不执行的文本
+//（comment / doc / raw 块与 `{% # %}` 行内注释），再匹配。条件分支内的引用视为有效。
+// HTML 注释照常执行 Liquid，不剔除。Mixer 注入、doctor 与生产校验共用此判定。
+export function rendersSnippet(content: string, snippet: string): boolean {
+  const executable = content
+    .replace(/\{%-?\s*(comment|doc|raw)\s*-?%\}[\s\S]*?\{%-?\s*end\1\s*-?%\}/g, "")
+    .replace(/\{%-?\s*#[\s\S]*?-?%\}/g, "");
+  const name = escapeRegExp(renderName(snippet));
+  return new RegExp(`\\{%-?\\s*render\\s+['"]${name}['"]`).test(executable);
+}
+
+// 生产 snippet 经 asset_url 引用的主题资产文件名（entry、CSS 与预载 chunk）。
+export function mixerAssetReferences(content: string): string[] {
+  return [...content.matchAll(/\{\{\s*'([^']+)'\s*\|\s*asset_url\b/g)].map((match) => match[1]);
+}
+
 // 转义正则元字符，snippet 名可经选项自定义，不能直接拼进 RegExp
-export function escapeRegExp(s: string): string {
+function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

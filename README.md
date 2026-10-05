@@ -56,7 +56,8 @@ pass a `themePath`, relative to the current working directory or absolute, to `s
 The plugin owns configuration derived from the Theme Target:
 
 - `#theme` points to the Theme Target root;
-- the watcher is narrowed to the Theme Target and the configured entry tree;
+- the watcher skips other Theme Targets under the Vite root, keeping the current theme, the entry
+  tree, and extra reload directories watched;
 - build output and bundle naming target the theme's `assets/` directory.
 
 The host owns the entry, root-source aliases, server transport settings, and CSS/JavaScript
@@ -78,7 +79,8 @@ shopify-theme merge   --path theme-ci <demo-sha> <source-sha>
 - `dev` starts Vite, runs `shopify theme dev`, forwards termination signals, and closes Vite after
   Shopify exits.
 - `build` runs Vite in its standard `production` mode and verifies the current versioned production
-  Mixer Snippet, the layout render tag, and the absence of `/@vite/client` in the theme tree.
+  Mixer Snippet, the assets it references, an executable layout render tag (not inside `comment`
+  or `raw`), and the absence of `/@vite/client` in the theme tree.
 - `push` holds one run across build, production verification, and `shopify theme push`.
 - `package` applies the same build and verification gate, packages only the standard theme
   directories without development entries, and fails before delivering the ZIP unless its entries
@@ -110,7 +112,9 @@ is no compatibility shim.
 Every run resolves the real Theme Target path and acquires a process lock in the OS temporary
 directory. Operations on the same target are mutually exclusive; different targets can run in
 parallel. A stale lock is recovered when its recorded process no longer exists. Direct Vite runs
-participate in the same lock. Stale recovery is serialized; if its short recovery guard is itself
+participate in the same lock and acquire it before changing Git index flags. Lock records are
+published atomically; an unreadable record is never recovered automatically, and acquisition and
+`doctor` report its path. Stale recovery is serialized; if its short recovery guard is itself
 abandoned by a killed process, acquisition fails closed and reports the guard path to remove.
 
 ## Mixer Snippet and Git
@@ -200,8 +204,9 @@ Without splitting the build keeps the flat single-file shape. With splitting:
 - Chunks and async CSS are content-addressed (`vite-mixer.[name].[hash].js|css`) and loaded
   relative to the importing module — Shopify serves `assets/` flat on its CDN, and the hash makes
   stale caches impossible. The build runs with a relative `base` for this reason.
-- Initial chunks (static imports of an entry) get `<link rel="modulepreload">` tags in the
-  snippet; dynamically imported chunks are loaded on demand and stay out of the snippet.
+- Initial chunks (static imports of an entry, collected recursively) get
+  `<link rel="modulepreload">` tags in the snippet, and their CSS gets stylesheet tags;
+  dynamically imported chunks and their CSS are loaded on demand and stay out of the snippet.
 - Names matching `vite-mixer.*.js|css` (with a middle segment) are a reserved namespace: after
   each build the plugin deletes files in that namespace that the build did not produce. Do not
   hand-author assets under such names. Committed chunk files change across builds; commit the

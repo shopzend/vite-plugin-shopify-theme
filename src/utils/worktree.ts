@@ -3,7 +3,8 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // mixer snippet 的 git skip-worktree 操作核，:worktree 插件与 CLI（src/cli.ts）共用。
-// git pathspec 统一用正斜杠，跨平台一致。
+// git pathspec 统一用正斜杠，跨平台一致。路径一律相对 cwd（Theme Target）解析：
+// pathspec 本就如此，`<rev>:<path>` 默认相对仓库根，须加 `./` 前缀，主题才可以位于仓库子目录。
 
 export function git(cwd: string, args: string[], pathspec: string): string {
   return execFileSync("git", [...args, "--", pathspec], { cwd, encoding: "utf8" });
@@ -41,7 +42,7 @@ export function isGitRepository(cwd: string): boolean {
 }
 
 export function indexFile(cwd: string, pathspec: string): string {
-  return execFileSync("git", ["show", `:${pathspec}`], { cwd, encoding: "utf8" });
+  return execFileSync("git", ["show", `:./${pathspec}`], { cwd, encoding: "utf8" });
 }
 
 export function restoreIndexFile(cwd: string, pathspec: string): SkipState {

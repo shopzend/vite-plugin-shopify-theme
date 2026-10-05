@@ -19,7 +19,8 @@ export function mergeCommits(themePath: string, commits: string[], snippet: stri
   const merging = () => git(["rev-parse", "-q", "--verify", "MERGE_HEAD"], true).status === 0;
   const unmerged = () => [
     ...new Set(
-      git(["ls-files", "-u", "-z"])
+      // `:/` 覆盖整个仓库：主题位于子目录时，主题外的冲突以 `../` 路径出现并按源码冲突失败。
+      git(["ls-files", "-u", "-z", "--", ":/"])
         .stdout.split("\0")
         .filter(Boolean)
         .map((entry) => entry.slice(entry.indexOf("\t") + 1)),
@@ -48,7 +49,8 @@ export function mergeCommits(themePath: string, commits: string[], snippet: stri
         );
       }
       for (const path of conflicts) {
-        if (git(["cat-file", "-e", `HEAD:${path}`], true).status === 0) {
+        // `HEAD:<path>` 默认相对仓库根，`./` 让它与 ls-files 输出一样相对 Theme Target。
+        if (git(["cat-file", "-e", `HEAD:./${path}`], true).status === 0) {
           git(["checkout", "HEAD", "--", path]);
         } else {
           git(["rm", "-q", "-f", "--", path]);

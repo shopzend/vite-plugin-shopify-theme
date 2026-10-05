@@ -3,7 +3,11 @@ import { join, relative, resolve, sep } from "node:path";
 import type { Plugin } from "vite";
 import type { ThemeRuntime } from "../runtime";
 import { currentThemeRun } from "../run/context";
-import { assertThemeTarget, canonicalThemePath } from "../run/theme-target";
+import {
+  assertThemeTarget,
+  canonicalThemePath,
+  themeTargetStructureFailures,
+} from "../run/theme-target";
 
 // 插件在 assets/ 中输出的文件：entry 稳定名与 `vite-mixer.*` 内容寻址产物（命名见下方
 // rolldownOptions.output）。CLI merge 据此识别可由重建替代的生成文件，改命名须同步。
@@ -63,21 +67,29 @@ export default function config(runtime: ThemeRuntime): Plugin {
       });
       log.debug("resolved", { root, themePath, entry, snippet: context.snippet });
 
-      const relativeTheme = relative(root, themePath);
-      const entryTop = topDirectory(relativeEntry, true);
-      // Theme Target 即 Vite root、或入口本身位于 root 顶层时，无法用一个顶层目录表达
-      // 完整 watch scope；此时不做目录裁剪，交给 Vite 模块图与 reload policy 过滤事件。
-      const canNarrow = relativeTheme !== "" && entryTop !== undefined;
+      // 只裁剪 root 下其他 Theme Target 目录（工作区并列的参考主题体量大且与本次运行无关）。
+      // 入口依赖可以位于 root 任意顶层目录，按入口目录裁剪会让模块图内文件收不到变更事件。
+      // 当前主题、入口与显式 reload 目录所在顶层目录始终保留：chokidar 的 ignored 同样作用于
+      // :reload 显式 add 的目录。
+      const reloadTops =
+        runtime.options.reload === false
+          ? []
+          : runtime.options.reload.map((dir) => topDirectory(relative(root, resolve(root, dir))));
       const kept = new Set(
-        [topDirectory(relativeTheme), entryTop].filter(
-          (item): item is string => item !== undefined,
-        ),
+        [
+          topDirectory(relative(root, themePath)),
+          topDirectory(relativeEntry),
+          ...reloadTops,
+        ].filter((item): item is string => item !== undefined),
       );
-      const ignored = canNarrow
-        ? readdirSync(root, { withFileTypes: true })
-            .filter((item) => item.isDirectory() && !kept.has(item.name))
-            .map((item) => join(root, item.name, "**"))
-        : [];
+      const ignored = readdirSync(root, { withFileTypes: true })
+        .filter(
+          (item) =>
+            item.isDirectory() &&
+            !kept.has(item.name) &&
+            themeTargetStructureFailures(join(root, item.name)).length === 0,
+        )
+        .map((item) => join(root, item.name, "**"));
 
       // The plugin owns config derived from the Theme Target. Root aliases, server transport,
       // and UI framework plugins remain host choices.
@@ -128,10 +140,10 @@ export default function config(runtime: ThemeRuntime): Plugin {
   };
 }
 
-function topDirectory(path: string, rootLevelFile = false): string | undefined {
+function topDirectory(path: string): string | undefined {
   if (!path || path === ".") return undefined;
   const parts = path.split(sep);
-  if (parts[0] === ".." || (rootLevelFile && parts.length === 1)) return undefined;
+  if (parts[0] === "..") return undefined;
   return parts[0];
 }
 

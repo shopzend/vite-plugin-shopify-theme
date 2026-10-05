@@ -16,6 +16,7 @@ function makeTheme(files: Record<string, string>): string {
   dirs.push(theme);
   for (const [file, content] of Object.entries({
     "snippets/vite-mixer.liquid": PROD_MIXER,
+    "assets/vite-mixer.js": "console.log('mixer')\n",
     ...files,
   })) {
     mkdirSync(dirname(join(theme, file)), { recursive: true });

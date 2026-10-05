@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve, sep } from "node:path";
-import { escapeRegExp, mixerForm, renderName } from "../plugins/mixer";
+import { mixerAssetReferences, mixerForm, renderName, rendersSnippet } from "../plugins/mixer";
 
 // 只扫 Shopify 标准主题目录：GitHub 集成与 theme push 只同步这些目录，
 // 仓库外围文件（docs、.reference、.vitify 源码）不上线，扫描它们只会误报。
@@ -29,8 +29,16 @@ export function verifyProductionTheme(themePath: string, snippet: string): strin
   const failures: string[] = [];
 
   const mixerFile = resolve(themePath, "snippets", snippet);
-  if (!existsSync(mixerFile) || mixerForm(readFileSync(mixerFile, "utf8")) !== "prod") {
+  const mixer = existsSync(mixerFile) ? readFileSync(mixerFile, "utf8") : "";
+  if (mixerForm(mixer) !== "prod") {
     failures.push(`Mixer Snippet is not in production form: ${mixerFile}`);
+  } else {
+    // 只核对 snippet 引用的首屏资产；动态 chunk 与本次构建同锁产出，不解析 JS import 图。
+    for (const asset of mixerAssetReferences(mixer)) {
+      if (!existsSync(resolve(themePath, "assets", asset))) {
+        failures.push(`Mixer Snippet references missing asset: assets/${asset}`);
+      }
+    }
   }
 
   const layoutFile = resolve(themePath, "layout", "theme.liquid");
@@ -39,7 +47,7 @@ export function verifyProductionTheme(themePath: string, snippet: string): strin
     failures.push(`layout/theme.liquid is missing; it must render ${render}`);
   } else {
     const layout = readFileSync(layoutFile, "utf8");
-    if (!new RegExp(`\\{%-?\\s*render\\s+['"]${escapeRegExp(render)}['"]`).test(layout)) {
+    if (!rendersSnippet(layout, snippet)) {
       failures.push(`layout/theme.liquid does not render ${render}`);
     }
   }

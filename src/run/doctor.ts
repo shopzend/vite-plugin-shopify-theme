@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { escapeRegExp, mixerForm, renderName } from "../plugins/mixer";
+import { mixerForm, renderName, rendersSnippet } from "../plugins/mixer";
 import { indexFile, isGitRepository, skipState } from "../utils/worktree";
 import { inspectThemeTargetLock } from "./target-lock";
 import { themeTargetStructureFailures } from "./theme-target";
@@ -61,7 +61,7 @@ export function inspectTheme(input: {
     diagnostics.push(fail("layout.render", "layout/theme.liquid is missing"));
   } else {
     const content = readFileSync(layoutFile, "utf8");
-    const renders = new RegExp(`\\{%-?\\s*render\\s+['"]${escapeRegExp(name)}['"]`).test(content);
+    const renders = rendersSnippet(content, input.snippet);
     diagnostics.push(
       renders
         ? pass("layout.render", `layout/theme.liquid renders ${name}`)
@@ -71,11 +71,21 @@ export function inspectTheme(input: {
 
   const lock = inspectThemeTargetLock(input.themePath);
   diagnostics.push(
-    lock.active && lock.lock
-      ? warn("lock.active", `${lock.lock.mode} pid ${lock.lock.pid}`)
-      : lock.recovery
-        ? warn("lock.active", `recovery pid ${lock.recovery.pid}`)
-        : pass("lock.active", "No active Theme Run"),
+    lock.corrupt
+      ? fail(
+          "lock.active",
+          `unreadable lock record ${lock.file}; remove it after confirming no Theme Run is starting`,
+        )
+      : lock.active && lock.lock
+        ? warn("lock.active", `${lock.lock.mode} pid ${lock.lock.pid}`)
+        : lock.recoveryPresent
+          ? warn(
+              "lock.active",
+              lock.recovery
+                ? `recovery pid ${lock.recovery.pid}`
+                : `recovery guard ${lock.file}.recovery`,
+            )
+          : pass("lock.active", "No active Theme Run"),
   );
   diagnostics.push(
     input.shopifyExecutable

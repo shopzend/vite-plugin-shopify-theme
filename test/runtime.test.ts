@@ -106,7 +106,7 @@ describe("shopifyTheme", () => {
     });
   });
 
-  it("does not narrow root directories when the theme or entry owns the Vite root", async () => {
+  it("ignores only other Theme Target directories wherever the theme or entry lives", async () => {
     const themeAtRoot = fixture();
     mkdirSync(join(themeAtRoot.root, "snippets"));
     mkdirSync(join(themeAtRoot.root, "layout"));
@@ -126,7 +126,7 @@ describe("shopifyTheme", () => {
       },
       "build",
     );
-    expect(themeConfig.server.watch!.ignored).toEqual([]);
+    expect(themeConfig.server.watch!.ignored).toEqual([join(themeAtRoot.root, "theme", "**")]);
 
     const entryAtRoot = fixture();
     writeFileSync(join(entryAtRoot.root, "main.ts"), "export {}\n");

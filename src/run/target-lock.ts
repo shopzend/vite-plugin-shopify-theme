@@ -1,13 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, linkSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalThemePath } from "./theme-target";
@@ -26,10 +18,19 @@ export interface ThemeTargetLockRecord {
 }
 
 export interface ThemeTargetLockStatus {
+  file: string;
   lock?: ThemeTargetLockRecord;
+  /** 锁文件存在但记录无法解析：自动恢复与 doctor 都不判定其 owner，必须人工确认后删除。 */
+  corrupt: boolean;
   recovery?: ThemeTargetLockRecord;
+  recoveryPresent: boolean;
   active: boolean;
 }
+
+type LockRead =
+  | { kind: "missing" }
+  | { kind: "corrupt" }
+  | { kind: "valid"; record: ThemeTargetLockRecord };
 
 export class ThemeTargetBusyError extends Error {}
 
@@ -49,18 +50,17 @@ export function acquireThemeTargetLock(
   if (existsSync(recoveryFile)) throw recoveryBusy(themePath, recoveryFile);
 
   try {
-    createOwnedFile(file, record);
+    publishRecord(file, record);
     return heldLock(file, record);
   } catch (error) {
     if (!isCode(error, "EEXIST")) throw error;
   }
 
-  const current = readRecord(file);
-  if (current && processIsAlive(current.pid)) throw activeRun(themePath, current);
+  assertRecoverable(themePath, file);
 
   const recovery = lockRecord(themePath, "recover");
   try {
-    createOwnedFile(recoveryFile, recovery);
+    publishRecord(recoveryFile, recovery);
   } catch (error) {
     if (isCode(error, "EEXIST")) throw recoveryBusy(themePath, recoveryFile);
     throw error;
@@ -68,8 +68,7 @@ export function acquireThemeTargetLock(
 
   try {
     // 取得恢复权后必须重新读取：此前的 stale 判断可能已被另一个 owner 替换。
-    const latest = readRecord(file);
-    if (latest && processIsAlive(latest.pid)) throw activeRun(themePath, latest);
+    assertRecoverable(themePath, file);
     try {
       unlinkSync(file);
     } catch (error) {
@@ -77,11 +76,11 @@ export function acquireThemeTargetLock(
     }
 
     try {
-      createOwnedFile(file, record);
+      publishRecord(file, record);
     } catch (error) {
       if (isCode(error, "EEXIST")) {
-        const owner = readRecord(file);
-        if (owner) throw activeRun(themePath, owner);
+        const owner = readLock(file);
+        if (owner.kind === "valid") throw activeRun(themePath, owner.record);
         throw new ThemeTargetBusyError(`${themePath} already has an active Theme Run`);
       }
       throw error;
@@ -98,9 +97,26 @@ export function inspectThemeTargetLock(
 ): ThemeTargetLockStatus {
   const themePath = canonicalThemePath(inputPath);
   const file = lockFile(themePath, root);
-  const lock = readRecord(file);
-  const recovery = readRecord(`${file}.recovery`);
-  return { lock, recovery, active: Boolean(lock && processIsAlive(lock.pid)) };
+  const current = readLock(file);
+  const lock = current.kind === "valid" ? current.record : undefined;
+  const recoveryFile = `${file}.recovery`;
+  return {
+    file,
+    lock,
+    corrupt: current.kind === "corrupt",
+    recovery: readRecord(recoveryFile),
+    recoveryPresent: existsSync(recoveryFile),
+    active: Boolean(lock && processIsAlive(lock.pid)),
+  };
+}
+
+// 只有「锁不存在」或「合法记录且 owner 已退出」可以进入恢复；损坏记录不猜 owner，失败关闭。
+function assertRecoverable(themePath: string, file: string): void {
+  const current = readLock(file);
+  if (current.kind === "corrupt") throw corruptLock(themePath, file);
+  if (current.kind === "valid" && processIsAlive(current.record.pid)) {
+    throw activeRun(themePath, current.record);
+  }
 }
 
 function lockFile(themePath: string, root: string): string {
@@ -118,19 +134,20 @@ function lockRecord(themePath: string, mode: string): ThemeTargetLockRecord {
   };
 }
 
-function createOwnedFile(file: string, record: ThemeTargetLockRecord): void {
-  const fd = openSync(file, "wx");
+// 先把完整记录写入 token 专属的临时文件，再用 link 原子发布：目标已存在时 link 同样返回
+// EEXIST，锁路径一经出现即为完整记录，不存在「已创建、未写入」的窗口。临时文件名带 token，
+// 中断遗留也不会被当作锁或阻塞后续申请。
+function publishRecord(file: string, record: ThemeTargetLockRecord): void {
+  const temp = `${file}.${record.token}.tmp`;
   try {
-    writeFileSync(fd, JSON.stringify(record, null, 2));
-  } catch (error) {
-    try {
-      unlinkSync(file);
-    } catch {
-      // Preserve the original write error.
-    }
-    throw error;
+    writeFileSync(temp, JSON.stringify(record, null, 2), { flag: "wx" });
+    linkSync(temp, file);
   } finally {
-    closeSync(fd);
+    try {
+      unlinkSync(temp);
+    } catch {
+      // Preserve the original publish error.
+    }
   }
 }
 
@@ -153,11 +170,39 @@ function unlinkOwned(file: string, token: string): void {
 }
 
 function readRecord(file: string): ThemeTargetLockRecord | undefined {
+  const current = readLock(file);
+  return current.kind === "valid" ? current.record : undefined;
+}
+
+function readLock(file: string): LockRead {
+  let content: string;
   try {
-    return JSON.parse(readFileSync(file, "utf8")) as ThemeTargetLockRecord;
-  } catch {
-    return undefined;
+    content = readFileSync(file, "utf8");
+  } catch (error) {
+    if (isCode(error, "ENOENT")) return { kind: "missing" };
+    throw error;
   }
+  try {
+    const record = JSON.parse(content) as Partial<ThemeTargetLockRecord> | null;
+    if (
+      typeof record?.token === "string" &&
+      Number.isInteger(record.pid) &&
+      (record.pid as number) > 0 &&
+      typeof record.mode === "string" &&
+      typeof record.themePath === "string"
+    ) {
+      return { kind: "valid", record: record as ThemeTargetLockRecord };
+    }
+  } catch {
+    // Fall through: unparsable content is a corrupt lock.
+  }
+  return { kind: "corrupt" };
+}
+
+function corruptLock(themePath: string, file: string): ThemeTargetBusyError {
+  return new ThemeTargetBusyError(
+    `${themePath} has an unreadable Theme Target Lock record; confirm no Theme Run is starting for this theme, then remove ${file}`,
+  );
 }
 
 function activeRun(themePath: string, current: ThemeTargetLockRecord): ThemeTargetBusyError {

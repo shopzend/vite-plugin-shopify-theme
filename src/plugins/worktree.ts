@@ -6,6 +6,8 @@ import { indexFile, isGitRepository, setSkip, skipState } from "../utils/worktre
 // Mixer Snippet 的 Git 生命周期：dev 要求 index 中已有当前生产形态，随后持久打上
 // skip-worktree，让工作区开发形态不妨碍随时提交；build 先解除标志，再写回可见生产形态。
 // 非 Git 主题不管理 index；worktree: "off" 显式关闭整个机制。
+// 校验只读，在 :lock 取锁之前执行，失败时不占锁；写 index 标志放进 post hook，晚于全部
+// 普通 configureServer（含 :lock 取锁），竞争者被拒绝前不会改写 Git。
 export default function worktree(runtime: ThemeRuntime): Plugin {
   const log = runtime.log("worktree");
   return {
@@ -38,11 +40,13 @@ export default function worktree(runtime: ThemeRuntime): Plugin {
           log.debug(`${rel} already skip-worktree`);
           return;
         }
-        setSkip(context.themePath, rel);
-        log.info(`skip-worktree set on ${rel}`);
       } catch (e) {
         throw new Error(`[shopify-theme] ${(e as Error).message}`);
       }
+      return () => {
+        setSkip(context.themePath, rel);
+        log.info(`skip-worktree set on ${rel}`);
+      };
     },
   };
 }
