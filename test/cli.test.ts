@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { crc32 } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCli, type ThemeRunAdapter } from "../src/cli";
 
@@ -31,6 +32,41 @@ function makeTheme(parent = makeDir("vpst-run-"), name = "theme"): string {
   mkdirSync(join(theme, "layout"), { recursive: true });
   writeFileSync(join(theme, "layout", "theme.liquid"), "<html>{% render 'vite-mixer' %}</html>\n");
   return theme;
+}
+
+// Stored (uncompressed) ZIP, enough for the package verification to read.
+function storedZip(files: Record<string, string>): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name);
+    const data = Buffer.from(content);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt32LE(crc32(data), 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt32LE(crc32(data), 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt32LE(offset, 42);
+    locals.push(local, nameBytes, data);
+    centrals.push(central, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const directory = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(centrals.length / 2, 8);
+  end.writeUInt16LE(centrals.length / 2, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
 }
 
 function adapter(overrides: Partial<ThemeRunAdapter> = {}): ThemeRunAdapter {
@@ -172,7 +208,12 @@ describe("shopify-theme CLI", () => {
         expect(readFileSync(join(staging, "layout", "theme.liquid"), "utf8")).toContain(
           "vite-mixer",
         );
-        writeFileSync(join(staging, "Formant.zip"), "archive");
+        writeFileSync(
+          join(staging, "Formant.zip"),
+          storedZip({
+            "layout/theme.liquid": readFileSync(join(staging, "layout", "theme.liquid"), "utf8"),
+          }),
+        );
         events.push(args.join(" "));
         return 0;
       },
@@ -180,7 +221,7 @@ describe("shopify-theme CLI", () => {
 
     expect(await runCli(["package", `--path=${theme}`, "--no-color"], run)).toBe(0);
     expect(events).toEqual(["build", "verify", `theme package --path ${staging} --no-color`]);
-    expect(readFileSync(join(theme, "Formant.zip"), "utf8")).toBe("archive");
+    expect(existsSync(join(theme, "Formant.zip"))).toBe(true);
     expect(existsSync(staging)).toBe(false);
   });
 

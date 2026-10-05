@@ -80,7 +80,9 @@ shopify-theme merge   --path theme-ci <demo-sha> <source-sha>
 - `build` runs Vite in its standard `production` mode and verifies the current versioned production
   Mixer Snippet, the layout render tag, and the absence of `/@vite/client` in the theme tree.
 - `push` holds one run across build, production verification, and `shopify theme push`.
-- `package` applies the same build and verification gate before `shopify theme package`.
+- `package` applies the same build and verification gate, packages only the standard theme
+  directories without development entries, and fails before delivering the ZIP unless its entries
+  match the packaged files byte for byte.
   Packaging uses a temporary directory containing only Shopify theme directories, excluding
   engineering instructions, tooling, source maps, and development metadata. The completed ZIP
   is moved back to the Theme Target; the temporary directory is removed even when packaging fails.

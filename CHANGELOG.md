@@ -4,6 +4,8 @@
 
 - Add `merge`, which merges commits for a rebuild and resolves conflicts limited to plugin build
   outputs and the Mixer Snippet.
+- `package` packages only standard theme directories and verifies the ZIP against the packaged
+  files before delivering it.
 
 ## 0.1.0 - 2026-08-21
 
