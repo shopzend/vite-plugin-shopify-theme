@@ -72,12 +72,19 @@ jobs:
           demo_sha="$(git -C theme-ci rev-parse "origin/$DEMO_BRANCH")"
           echo "THEME_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
           echo "THEME_DEMO_SHA=$demo_sha" >> "$GITHUB_ENV"
+          merge_log="$RUNNER_TEMP/candidate-merge.log"
+          status=0
+          pnpm --silent shopify merge --path theme-ci "$demo_sha" "$source_sha" 2>&1 \
+            | tee "$merge_log" || status=$?
+          # The step summary is Markdown: drop terminal color codes and keep the log verbatim.
           {
             echo "### Candidate merge"
             echo
+            echo '```text'
+            sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' "$merge_log"
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          pnpm --silent shopify merge --path theme-ci "$demo_sha" "$source_sha" 2>&1 \
-            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       - name: Check and build production assets
         working-directory: toolkit
         run: |
