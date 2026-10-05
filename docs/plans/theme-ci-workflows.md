@@ -60,12 +60,12 @@ review-after: 2026-11-05
 
 依赖步骤 1。在本仓库新增：
 
-| 文件                                    | 来源与职责                                                                                         |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `.github/actions/toolchain/action.yml`  | 来自参考主题的工具链 Action：检出工具层、放置插件源码、安装 Vite+、冻结安装依赖、安装 Shopify CLI |
-| `.github/workflows/theme-build.yml`     | 来自参考主题构建：合并、Theme Check、构建、提交候选、摘要与检查报告                               |
-| `.github/workflows/theme-promote.yml`   | 来自参考主题晋升：候选仍为当前版本、快进、重建无差异、推送 Demo 分支                              |
-| `.github/workflows/theme-package.yml`   | 来自参考主题打包：tag 校验、来源校验、打包、包内容校验、草稿 Release                              |
+| 文件                                   | 来源与职责                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `.github/actions/toolchain/action.yml` | 来自参考主题的工具链 Action：检出工具层、放置插件源码、安装 Vite+、冻结安装依赖、安装 Shopify CLI |
+| `.github/workflows/theme-build.yml`    | 来自参考主题构建：合并、Theme Check、构建、提交候选、摘要与检查报告                               |
+| `.github/workflows/theme-promote.yml`  | 来自参考主题晋升：候选仍为当前版本、快进、重建无差异、推送 Demo 分支                              |
+| `.github/workflows/theme-package.yml`  | 来自参考主题打包：tag 校验、来源校验、打包、包内容校验、草稿 Release                              |
 
 包内容校验优先并入 `package` 子命令；该子命令尚不覆盖的参考主题校验项（版本与 tag 一致、包内文件与跟踪文件逐项一致、开发文件排除）补进 CLI，不在工作流中另放脚本。插件源码从复合 Action 所在的仓库副本放入工具层 workspace 后再安装，安装后在 CI 中构建插件。
 
