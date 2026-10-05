@@ -72,7 +72,11 @@ export async function runCli(
       lock.release();
     }
   } catch (error) {
-    if (error instanceof CliError || error instanceof ThemeTargetBusyError || error instanceof ThemePackageError) {
+    if (
+      error instanceof CliError ||
+      error instanceof ThemeTargetBusyError ||
+      error instanceof ThemePackageError
+    ) {
       console.error(pc.red(`error: ${error.message}`));
       return 1;
     }

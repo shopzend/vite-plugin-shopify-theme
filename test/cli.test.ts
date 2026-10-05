@@ -169,7 +169,9 @@ describe("shopify-theme CLI", () => {
         staging = args[3];
         expect(staging).toContain(join(realpathSync(theme), ".shopify-theme-package-"));
         expect(existsSync(join(staging, "AGENTS.md"))).toBe(false);
-        expect(readFileSync(join(staging, "layout", "theme.liquid"), "utf8")).toContain("vite-mixer");
+        expect(readFileSync(join(staging, "layout", "theme.liquid"), "utf8")).toContain(
+          "vite-mixer",
+        );
         writeFileSync(join(staging, "Formant.zip"), "archive");
         events.push(args.join(" "));
         return 0;
@@ -177,11 +179,7 @@ describe("shopify-theme CLI", () => {
     });
 
     expect(await runCli(["package", `--path=${theme}`, "--no-color"], run)).toBe(0);
-    expect(events).toEqual([
-      "build",
-      "verify",
-      `theme package --path ${staging} --no-color`,
-    ]);
+    expect(events).toEqual(["build", "verify", `theme package --path ${staging} --no-color`]);
     expect(readFileSync(join(theme, "Formant.zip"), "utf8")).toBe("archive");
     expect(existsSync(staging)).toBe(false);
   });
