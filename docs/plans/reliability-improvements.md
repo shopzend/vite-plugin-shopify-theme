@@ -1,6 +1,6 @@
 ---
 doc-type: plan
-status: draft
+status: active
 source-of-truth:
   - ../../src/run/target-lock.ts
   - ../../src/index.ts
@@ -23,7 +23,7 @@ review-after: 2026-11-05
 
 本文面向插件维护者，将 2026-10-05 代码审查发现的五项可靠性问题整理为可独立验证的工程任务。优先处理主题运行互斥和拆包样式完整性，再补齐生产校验、Git 子目录支持与 watcher 范围。
 
-五项修复已于 2026-10-05 在工作树实施，尚未提交；插件打包、`test:package` 与浏览器端样式加载 / HMR 尚未验证。本文不替代[工作区迭代规划](../../../docs/plans/vite-plugin-shopify-theme-roadmap.md)中的外部验收与发布工作；主题 CI 编排另见[主题 CI 可复用工作流方案](theme-ci-workflows.md)。
+五项修复已随 `23622ab` 提交（2026-10-05）；`vp check`、类型检查、既有测试、插件打包与 `test:package` 已在本机通过，浏览器端拆包样式加载与 HMR 尚未在 development 主题上验证。本文不替代[工作区迭代规划](../../../docs/plans/vite-plugin-shopify-theme-roadmap.md)中的外部验收与发布工作；主题 CI 编排另见[主题 CI 可复用工作流方案](theme-ci-workflows.md)。
 
 ## 审查基准与证据边界
 
