@@ -32,7 +32,7 @@ try {
     [
       "install",
       tarball,
-      "@types/node@26.2.0",
+      "@types/node@22.20.5",
       "vite@8.2.1",
       "typescript@7.0.2",
       "--",

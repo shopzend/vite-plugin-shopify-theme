@@ -229,6 +229,12 @@ in the release manifest.
 
 ## Development
 
+Development uses Vite+; its Node requirements are declared in the installed toolchain.
+The plugin's consumer requirements remain in [package.json](package.json).
+Keep the Vite+ dependency and core alias in [package.json](package.json) aligned with
+the override in [pnpm-workspace.yaml](pnpm-workspace.yaml), and refresh both this package's
+lockfile and the host toolkit's lockfile when changing development dependencies.
+
 ```bash
 vp check
 vp run typecheck

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, sep } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vite-plus/test";
 import { resolveThemeOptions } from "../src/options";
 import { resolveDevOrigin } from "../src/run/dev-origin";
 import { currentBranch, gitDir } from "../src/run/git-branch";

@@ -41,9 +41,10 @@
   "scripts": {
     "build": "obuild",
     "check": "vp check",
-    "format": "vp fmt --check",
+    "format": "vp fmt",
+    "format:check": "vp fmt --check",
     "stub": "obuild --stub",
-    "test": "vitest run",
+    "test": "vp test",
     "test:package": "node scripts/package-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "prepare": "obuild"
@@ -52,17 +53,14 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^22.20.5",
     "jiti": "^2.7.0",
     "obuild": "^0.4.43",
     "typescript": "^7.0.2",
-    "vite": "^8.3.2",
-    "vitest": "^5.0.3"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vite-plus": "1.0.0"
   },
   "peerDependencies": {
     "vite": "^8.0.0"
-  },
-  "engines": {
-    "node": ">=22.14.0"
   }
 }
