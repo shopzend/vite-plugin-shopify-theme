@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import type { Plugin, Rolldown } from "vite";
 import type { ThemeRuntime } from "../runtime";
 import { resolveDevOrigin } from "../run/dev-origin";
-import { clearSkip, isGitRepository, skipState } from "../utils/worktree";
+import { clearSkip, indexFile, isGitRepository, type SkipState, skipState } from "../utils/git";
 
 export const MIXER_FORMAT_VERSION = 1;
 
@@ -22,6 +22,24 @@ export function mixerForm(content: string): "dev" | "prod" | "unknown" {
   if (devMarker && devBody && !prodMarker && !prodBody) return "dev";
   if (prodMarker && prodBody && !devMarker && !devBody) return "prod";
   return "unknown";
+}
+
+// Git index 中 Mixer Snippet 的前置校验（dev 与 restore 共用）：必须被跟踪；verifyForm 时
+// 还必须是当前生产形态。不满足即抛错，修复指引统一为 build 后 git add；返回跟踪状态。
+export function assertIndexedMixer(
+  themePath: string,
+  rel: string,
+  verifyForm: boolean,
+): Exclude<SkipState, "untracked"> {
+  const fix = `Run shopify-theme build --path ${themePath}, then git add ${rel}.`;
+  const state = skipState(themePath, rel);
+  if (state === "untracked") {
+    throw new Error(`${rel} must be a tracked production Mixer Snippet. ${fix}`);
+  }
+  if (verifyForm && mixerForm(indexFile(themePath, rel)) !== "prod") {
+    throw new Error(`${rel} in the Git index is not the current production Mixer Snippet. ${fix}`);
+  }
+  return state;
 }
 
 // 把 Vite 接入 Shopify 主题，按构建态写出 mixer snippet：
@@ -112,7 +130,7 @@ export default function mixer(runtime: ThemeRuntime): Plugin {
       const context = runtime.require();
       ensureRenderTag(true);
 
-      if (runtime.options.worktree !== "off" && isGitRepository(context.themePath)) {
+      if (runtime.options.gitMixer !== false && isGitRepository(context.themePath)) {
         const rel = `snippets/${context.snippet}`;
         if (skipState(context.themePath, rel) === "flagged") {
           clearSkip(context.themePath, rel);

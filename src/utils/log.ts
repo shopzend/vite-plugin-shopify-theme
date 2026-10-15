@@ -1,5 +1,5 @@
 import { createLogger, type Logger } from "vite";
-import pc from "picocolors";
+import { styleText } from "node:util";
 
 function format(args: unknown[]): string {
   return args
@@ -21,7 +21,7 @@ export function createRuntimeLog(debug: boolean) {
       logger = next;
     },
     scope(name: string) {
-      const tag = pc.dim(`[shopify-theme:${name}]`);
+      const tag = styleText("dim", `[shopify-theme:${name}]`);
       return {
         debug(...args: unknown[]) {
           if (debug) logger.info(`${tag} ${format(args)}`, { timestamp: true });

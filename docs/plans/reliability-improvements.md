@@ -5,11 +5,11 @@ source-of-truth:
   - ../../src/run/target-lock.ts
   - ../../src/index.ts
   - ../../src/plugins/lock.ts
-  - ../../src/plugins/worktree.ts
+  - ../../src/plugins/git-mixer.ts
   - ../../src/plugins/mixer.ts
   - ../../src/run/verify.ts
   - ../../src/run/doctor.ts
-  - ../../src/utils/worktree.ts
+  - ../../src/utils/git.ts
   - ../../src/plugins/config.ts
   - ../../src/plugins/reload.ts
   - ../../src/cli.ts
@@ -59,7 +59,7 @@ T4 与 T5 的已确认触发条件在本工作区不出现：工作区主题均�
 
 **问题与影响。** 首次创建锁文件与写入 owner 记录之间存在窗口，读取失败会被当作可恢复的旧锁，竞争者可能删除仍在创建中的锁。直接运行 Vite 的路径还会在取得锁前修改 Git 标志，破坏同目标互斥的副作用边界。前两项均已通过临时目录或钩子交错执行复现。
 
-实施位置：[目标锁](../../src/run/target-lock.ts)、[插件注册顺序](../../src/index.ts)、[锁插件](../../src/plugins/lock.ts)、[Git 生命周期插件](../../src/plugins/worktree.ts)、[只读诊断](../../src/run/doctor.ts)。
+实施位置：[目标锁](../../src/run/target-lock.ts)、[插件注册顺序](../../src/index.ts)、[锁插件](../../src/plugins/lock.ts)、[Git 生命周期插件](../../src/plugins/git-mixer.ts)、[只读诊断](../../src/run/doctor.ts)。
 
 推荐改动：
 
@@ -129,7 +129,7 @@ T4 与 T5 的已确认触发条件在本工作区不出现：工作区主题均�
 
 生成文件冲突合并存在同一根因：冲突路径来自相对当前目录的 `ls-files` 输出，而判断 HEAD 中是否存在该文件时按仓库根解析树路径。子目录主题下判断必然失败，已跟踪的生成文件会被 `git rm` 删除而非检出 HEAD 版本。该结论由源码与 Git 路径解析规则推得，尚未复现。
 
-实施位置：[Git 操作核](../../src/utils/worktree.ts)，同步复核其调用方：[开发生命周期](../../src/plugins/worktree.ts)、[恢复入口](../../src/cli.ts)、[doctor](../../src/run/doctor.ts)、[生成文件合并](../../src/run/merge.ts)。
+实施位置：[Git 操作核](../../src/utils/git.ts)，同步复核其调用方：[开发生命周期](../../src/plugins/git-mixer.ts)、[恢复入口](../../src/cli.ts)、[doctor](../../src/run/doctor.ts)、[生成文件合并](../../src/run/merge.ts)。
 
 推荐改动：在 Git 操作核中统一目标路径的解析基准，index 与 HEAD 树路径均使用当前目录相对写法（`:./` 前缀）；合并流程复用同一解析方式。不要求主题根必须是 Git 仓库根，也不在调用方各自修补。
 

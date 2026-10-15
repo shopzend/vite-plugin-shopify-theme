@@ -30,9 +30,9 @@ function plugins(themePath: string, devOrigin?: string) {
       themePath,
       entry: "src/main.ts",
       devOrigin,
-      devBranches: false,
-      reload: false,
-      maxDevProcesses: false,
+      branchPrefix: false,
+      fullReload: false,
+      parallelWarn: false,
     }),
   ];
 }

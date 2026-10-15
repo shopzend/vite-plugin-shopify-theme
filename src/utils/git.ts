@@ -1,8 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-// mixer snippet 的 git skip-worktree 操作核，:worktree 插件与 CLI（src/cli.ts）共用。
+// 插件的 Git 操作核：mixer snippet 的 skip-worktree 与 index 读写、当前分支，
+// :git-mixer / :branch 插件与 CLI（src/cli.ts）共用。
 // git pathspec 统一用正斜杠，跨平台一致。路径一律相对 cwd（Theme Target）解析：
 // pathspec 本就如此，`<rev>:<path>` 默认相对仓库根，须加 `./` 前缀，主题才可以位于仓库子目录。
 
@@ -39,6 +40,18 @@ export function isGitRepository(cwd: string): boolean {
   } catch {
     return false;
   }
+}
+
+// 当前分支名，detached HEAD 返回 undefined。交给 git 解析，仓库子目录与 linked worktree 同样成立。
+export function currentBranch(cwd: string): string | undefined {
+  const result = spawnSync("git", ["symbolic-ref", "--short", "-q", "HEAD"], {
+    cwd,
+    encoding: "utf8",
+  });
+  if (result.error) throw result.error;
+  if (result.status === 1) return undefined;
+  if (result.status !== 0) throw new Error(`git symbolic-ref failed: ${result.stderr.trim()}`);
+  return result.stdout.trim();
 }
 
 export function indexFile(cwd: string, pathspec: string): string {

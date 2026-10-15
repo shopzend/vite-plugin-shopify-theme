@@ -37,9 +37,9 @@ function plugins(themePath: string) {
     shopifyTheme({
       themePath,
       entry: "src/main.ts",
-      devBranches: false,
-      reload: false,
-      maxDevProcesses: false,
+      branchPrefix: false,
+      fullReload: false,
+      parallelWarn: false,
     }),
   ];
 }

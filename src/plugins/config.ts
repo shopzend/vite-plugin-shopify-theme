@@ -16,7 +16,7 @@ export function isBuildOutputAsset(file: string): boolean {
 }
 
 // config 钩子：解析 Theme Runtime，并注入 Theme Target 派生的 alias/watcher/build 配置。
-// 是最早的钩子，故早于读取 runtime 的 check/reload/mixer。
+// 是最早的钩子，故早于读取 runtime 的 branch/reload/mixer。
 // 注：Vite 此前已解析完用户插件，无法在此再注入插件——插件由工厂（index.ts）直接返回。
 export default function config(runtime: ThemeRuntime): Plugin {
   const log = runtime.log("config");
@@ -55,7 +55,7 @@ export default function config(runtime: ThemeRuntime): Plugin {
       }
       const themePath = canonicalThemePath(target);
       assertThemeTarget(themePath);
-      if (run) run.snippet = runtime.options.snippet;
+      if (run) run.snippet = runtime.options.mixerSnippet;
 
       // snippet 已由工厂 DEFAULTS 补齐，此处直接读。
       const context = runtime.resolve({
@@ -72,9 +72,11 @@ export default function config(runtime: ThemeRuntime): Plugin {
       // 当前主题、入口与显式 reload 目录所在顶层目录始终保留：chokidar 的 ignored 同样作用于
       // :reload 显式 add 的目录。
       const reloadTops =
-        runtime.options.reload === false
+        runtime.options.fullReload === false
           ? []
-          : runtime.options.reload.map((dir) => topDirectory(relative(root, resolve(root, dir))));
+          : runtime.options.fullReload.map((dir) =>
+              topDirectory(relative(root, resolve(root, dir))),
+            );
       const kept = new Set(
         [
           topDirectory(relative(root, themePath)),

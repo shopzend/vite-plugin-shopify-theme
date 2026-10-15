@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import pc from "picocolors";
+import { styleText } from "node:util";
 
 export interface ShopifyDevProcess {
   pid: string;
@@ -33,25 +33,37 @@ const BAR = "─".repeat(68);
 
 export function formatDevProcessWarning(procs: ShopifyDevProcess[], devArgs?: string[]): string {
   const rows = procs.map((proc) =>
-    pc.yellow(`   pid ${proc.pid.padStart(6)}   up ${proc.etime.padStart(11)}   ${proc.args}`),
+    styleText(
+      "yellow",
+      `   pid ${proc.pid.padStart(6)}   up ${proc.etime.padStart(11)}   ${proc.args}`,
+    ),
   );
   return [
     "",
-    pc.yellow(BAR),
-    pc.yellow(
-      pc.bold(` ⚠  ${procs.length} shopify dev processes already exist — they throttle each other`),
+    styleText("yellow", BAR),
+    styleText(
+      "yellow",
+      styleText(
+        "bold",
+        ` ⚠  ${procs.length} shopify dev processes already exist — they throttle each other`,
+      ),
     ),
-    pc.yellow(BAR),
+    styleText("yellow", BAR),
     ...rows,
     ...(devArgs
-      ? [pc.dim(`   pending   shopify ${devArgs.join(" ")}  ← this one (not started yet)`)]
+      ? [
+          styleText(
+            "dim",
+            `   pending   shopify ${devArgs.join(" ")}  ← this one (not started yet)`,
+          ),
+        ]
       : []),
     "",
-    pc.dim("   One account-wide API rate limit is shared by all of them. Measured with"),
-    pc.dim("   4 concurrent: page load 4.2s → 6.7s, plus 429 (store) / 502 (CLI proxy)."),
+    styleText("dim", "   One account-wide API rate limit is shared by all of them. Measured with"),
+    styleText("dim", "   4 concurrent: page load 4.2s → 6.7s, plus 429 (store) / 502 (CLI proxy)."),
     "",
-    `   ${pc.bold("Stop the unused ones:")}   ${pc.cyan(`kill ${procs.map((p) => p.pid).join(" ")}`)}`,
-    pc.yellow(BAR),
+    `   ${styleText("bold", "Stop the unused ones:")}   ${styleText("cyan", `kill ${procs.map((p) => p.pid).join(" ")}`)}`,
+    styleText("yellow", BAR),
   ].join("\n");
 }
 

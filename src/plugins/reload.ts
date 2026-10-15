@@ -13,14 +13,14 @@ export default function reload(runtime: ThemeRuntime): Plugin {
     configureServer(server) {
       const context = runtime.require();
       // 关闭出口：宿主想把整页刷新交给 Shopify CLI 自带的 live reload（两套同开会双重刷新）。
-      if (runtime.options.reload === false) {
+      if (runtime.options.fullReload === false) {
         log.debug("reload disabled by option");
         return;
       }
       // themePath 单目录前缀即框定主题源码，无需逐子目录白名单。
       const themeDir = normalize(context.themePath);
       // 额外整页 reload 目录（相对 root，可在 themePath 外）。
-      const extraDirs = runtime.options.reload.map((p) => normalize(join(context.root, p)));
+      const extraDirs = runtime.options.fullReload.map((p) => normalize(join(context.root, p)));
 
       // 宿主形态下此 add 冗余（themePath 恒在 root 内，已被递归 watch 覆盖）；
       // 保留是为支持 themePath 在 root 外的契约，成本为零。

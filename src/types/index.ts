@@ -5,20 +5,21 @@ export interface ShopifyThemeOptions {
   /** Vite root 内的入口（可传 root 相对路径或绝对路径，必填） */
   entry: string;
   /** 生成的 mixer snippet 文件名；默认 "vite-mixer.liquid" */
-  snippet?: string;
+  mixerSnippet?: string;
   /** dev 下允许的主题仓库分支前缀列表（任一命中即通过）；默认 ["dev"]，传 false 关闭 */
-  devBranches?: string[] | false;
+  branchPrefix?: string[] | false;
   /**
-   * dev 下对被 git 跟踪的 mixer snippet 的 skip-worktree 位策略：
-   * "skip"（默认）启动时打上标志，git 忽略其本地变动；
-   * "off" 不做任何 git 操作
+   * dev 下被 git 跟踪的 mixer snippet 的 index 管理：
+   * "verify"（默认）要求 index 中为当前生产形态，并打上 skip-worktree；
+   * "track" 只打 skip-worktree，不检查 index 形态；
+   * false 不做任何 git 操作
    */
-  worktree?: "skip" | "off";
+  gitMixer?: "verify" | "track" | false;
   /**
    * 额外整页 reload 的目录（相对 root）；传 false 整体关闭 :reload 的整页刷新
    *（如想交给 `shopify theme dev` 自带的 live reload——两套机制同开会双重刷新）
    */
-  reload?: string[] | false;
+  fullReload?: string[] | false;
   /** dev snippet 使用的 Vite origin；默认 local，network 用于局域网，完整 URL 用于代理或 tunnel */
   devOrigin?: "local" | "network" | (string & {});
   /**
@@ -26,7 +27,7 @@ export interface ShopifyThemeOptions {
    * 超过此数即告警并列出。默认 0；传 false 关闭检查。
    * 多个 dev 进程共享同一账号的 API 配额，会拖慢预览甚至触发 429/502。
    */
-  maxDevProcesses?: number | false;
+  parallelWarn?: number | false;
   /** 开启 debug 日志；默认 false（经参数传入，不读 process.env） */
   debug?: boolean;
 }
@@ -36,6 +37,12 @@ export type ResolvedOptions = ShopifyThemeOptions &
   Required<
     Pick<
       ShopifyThemeOptions,
-      "snippet" | "devBranches" | "worktree" | "reload" | "devOrigin" | "maxDevProcesses" | "debug"
+      | "mixerSnippet"
+      | "branchPrefix"
+      | "gitMixer"
+      | "fullReload"
+      | "devOrigin"
+      | "parallelWarn"
+      | "debug"
     >
   >;

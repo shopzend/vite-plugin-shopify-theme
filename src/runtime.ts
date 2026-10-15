@@ -20,7 +20,7 @@ export class ThemeRuntime {
     runLockToken?: string;
   }): Readonly<ThemeRuntimeContext> {
     if (this.context) throw new Error("[shopify-theme] Theme Runtime was resolved more than once");
-    this.context = Object.freeze({ ...input, snippet: this.options.snippet });
+    this.context = Object.freeze({ ...input, snippet: this.options.mixerSnippet });
     return this.context;
   }
 

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { mixerForm, renderName, rendersSnippet } from "../plugins/mixer";
-import { indexFile, isGitRepository, skipState } from "../utils/worktree";
+import { indexFile, isGitRepository, skipState } from "../utils/git";
 import { inspectThemeTargetLock } from "./target-lock";
 import { themeTargetStructureFailures } from "./theme-target";
 

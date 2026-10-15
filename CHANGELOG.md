@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-10-15
 
 - Publish Theme Target Lock records atomically and fail closed on unreadable records; set
   `skip-worktree` only after the lock is acquired.
@@ -10,6 +10,18 @@
 - Support Theme Targets in a Git repository subdirectory for dev, restore, doctor, and merge.
 - Watch the entry dependency tree and extra reload directories; only other Theme Targets under the
   Vite root are ignored.
+- Read the dev branch through Git so Theme Targets in a repository subdirectory pass the branch
+  check; non-Git Theme Targets skip it.
+- Scan `listings/` during production verification, matching the directories that `package` ships.
+- Color terminal output with Node's built-in `util.styleText` and drop the `picocolors` dependency.
+
+### Breaking changes
+
+- Rename options: `snippet` → `mixerSnippet`, `devBranches` → `branchPrefix`, `reload` →
+  `fullReload`, and `maxDevProcesses` → `parallelWarn`.
+- Replace `worktree: "skip" | "off"` with `gitMixer: "verify" | "track" | false`. `"verify"`
+  (default) keeps the previous `"skip"` behavior, `"track"` skips the indexed production-form check,
+  and `false` replaces `"off"`.
 
 ## 0.1.2 - 2026-10-05
 

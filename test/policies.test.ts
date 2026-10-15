@@ -1,11 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, sep } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 import { resolveThemeOptions } from "../src/options";
 import { resolveDevOrigin } from "../src/run/dev-origin";
-import { currentBranch, gitDir } from "../src/run/git-branch";
 import { shouldReload } from "../src/run/reload-policy";
+import { currentBranch } from "../src/utils/git";
 
 let directories: string[] = [];
 
@@ -13,6 +14,28 @@ function temporary(prefix: string): string {
   const directory = mkdtempSync(join(tmpdir(), prefix));
   directories.push(directory);
   return directory;
+}
+
+function git(cwd: string, ...args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8" });
+}
+
+function gitRepository(branch: string): string {
+  const repo = temporary("vpst-git-");
+  git(repo, "init", "-q", "-b", branch);
+  git(
+    repo,
+    "-c",
+    "user.email=t@e.com",
+    "-c",
+    "user.name=T",
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "init",
+  );
+  return repo;
 }
 
 afterEach(() => {
@@ -24,16 +47,16 @@ describe("option policy", () => {
   it("uses defaults for undefined while preserving explicit false", () => {
     const options = resolveThemeOptions({
       entry: "src/main.ts",
-      snippet: undefined,
-      devBranches: false,
-      reload: false,
-      maxDevProcesses: undefined,
+      mixerSnippet: undefined,
+      branchPrefix: false,
+      fullReload: false,
+      parallelWarn: undefined,
     });
     expect(options).toMatchObject({
-      snippet: "vite-mixer.liquid",
-      devBranches: false,
-      reload: false,
-      maxDevProcesses: 0,
+      mixerSnippet: "vite-mixer.liquid",
+      branchPrefix: false,
+      fullReload: false,
+      parallelWarn: 0,
       devOrigin: "local",
     });
   });
@@ -64,29 +87,18 @@ describe("dev origin policy", () => {
 });
 
 describe("Git branch policy", () => {
-  it("reads slash-containing branches and rejects detached HEAD", () => {
-    const repo = temporary("vpst-git-");
-    mkdirSync(join(repo, ".git"));
-    writeFileSync(join(repo, ".git", "HEAD"), "ref: refs/heads/dev/feature\n");
+  it("reads slash-containing branches and reports detached HEAD", () => {
+    const repo = gitRepository("dev/feature");
     expect(currentBranch(repo)).toBe("dev/feature");
-    writeFileSync(join(repo, ".git", "HEAD"), "0123456789abcdef\n");
-    expect(() => currentBranch(repo)).toThrow(/not on a branch/);
+    git(repo, "checkout", "-q", "--detach");
+    expect(currentBranch(repo)).toBeUndefined();
   });
 
-  it("resolves a linked-worktree .git file", () => {
-    const repo = temporary("vpst-repo-");
-    mkdirSync(join(repo, ".git"));
-    writeFileSync(join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
-    const worktree = temporary("vpst-worktree-");
-    writeFileSync(join(worktree, ".git"), `gitdir: ${join("..", basename(repo), ".git")}\n`);
-    expect(gitDir(worktree)).toBe(join(repo, ".git"));
-    expect(currentBranch(worktree)).toBe("main");
-  });
-
-  it("reports non-repositories with the plugin error prefix", () => {
-    expect(() => currentBranch(temporary("vpst-no-git-"))).toThrow(
-      /\[shopify-theme\].*no git repo/,
-    );
+  it("reads the branch of a linked worktree", () => {
+    const repo = gitRepository("main");
+    const worktree = join(temporary("vpst-worktree-"), "linked");
+    git(repo, "worktree", "add", "-q", "-b", "dev/linked", worktree);
+    expect(currentBranch(worktree)).toBe("dev/linked");
   });
 });
 

@@ -1,19 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { mixerAssetReferences, mixerForm, renderName, rendersSnippet } from "../plugins/mixer";
+import { THEME_DIRECTORIES } from "./theme-target";
 
-// 只扫 Shopify 标准主题目录：GitHub 集成与 theme push 只同步这些目录，
-// 仓库外围文件（docs、.reference、.vitify 源码）不上线，扫描它们只会误报。
-const THEME_DIRS = [
-  "assets",
-  "blocks",
-  "config",
-  "layout",
-  "locales",
-  "sections",
-  "snippets",
-  "templates",
-];
 const SCAN_EXTENSIONS = [".liquid", ".js", ".css"];
 
 // 开发形态由 Vite client 唯一标识，与 origin 的协议、地址或 tunnel 域名无关。
@@ -69,7 +58,7 @@ export function verifyProductionTheme(themePath: string, snippet: string): strin
 
 function themeFiles(themePath: string): string[] {
   const files: string[] = [];
-  for (const dir of THEME_DIRS) {
+  for (const dir of THEME_DIRECTORIES) {
     const root = resolve(themePath, dir);
     if (!existsSync(root)) continue;
     for (const entry of readdirSync(root, { recursive: true, withFileTypes: true })) {

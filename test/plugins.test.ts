@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { type Logger, type Plugin } from "vite";
 import { resolveThemeOptions } from "../src/options";
-import check from "../src/plugins/check";
-import concurrency from "../src/plugins/concurrency";
+import branch from "../src/plugins/branch";
+import parallel from "../src/plugins/parallel";
 import reload from "../src/plugins/reload";
 import { ThemeRuntime } from "../src/runtime";
 
@@ -21,24 +22,23 @@ afterEach(() => {
 describe("plugin lifecycle policies", () => {
   it("runs the branch check from the plugin lifecycle", () => {
     const { root, themePath } = fixture();
-    mkdirSync(join(themePath, ".git"));
-    writeFileSync(join(themePath, ".git", "HEAD"), "ref: refs/heads/main\n");
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: themePath });
     const runtime = new ThemeRuntime(
-      resolveThemeOptions({ entry: "src/main.ts", devBranches: ["dev"] }),
+      resolveThemeOptions({ entry: "src/main.ts", branchPrefix: ["dev"] }),
     );
     runtime.resolve({ root, themePath, entry: "src/main.ts", command: "serve" });
-    expect(() => invokeBuildStart(check(runtime))).toThrow(/current "main"/);
+    expect(() => invokeBuildStart(branch(runtime))).toThrow(/current "main"/);
   });
 
   it("skips process inspection on win32 and degrades when ps fails", () => {
     const runtime = resolvedRuntime();
     const list = vi.fn(() => []);
-    invokeConfigure(concurrency(runtime, { platform: "win32", list }));
+    invokeConfigure(parallel(runtime, { platform: "win32", list }));
     expect(list).not.toHaveBeenCalled();
 
     expect(() =>
       invokeConfigure(
-        concurrency(runtime, {
+        parallel(runtime, {
           platform: "darwin",
           list: () => {
             throw new Error("ps unavailable");
@@ -49,11 +49,11 @@ describe("plugin lifecycle policies", () => {
   });
 
   it("warns only when the configured process threshold is exceeded", () => {
-    const runtime = resolvedRuntime({ maxDevProcesses: 1 });
+    const runtime = resolvedRuntime({ parallelWarn: 1 });
     const warn = vi.fn();
     runtime.setLogger(logger({ warn }));
     invokeConfigure(
-      concurrency(runtime, {
+      parallel(runtime, {
         platform: "darwin",
         list: () => [
           { pid: "1", etime: "00:01", args: "shopify theme dev" },
@@ -66,7 +66,7 @@ describe("plugin lifecycle policies", () => {
 
   it("debounces full reloads and leaves Vite module-graph files to HMR", () => {
     vi.useFakeTimers();
-    const runtime = resolvedRuntime({ reload: [] });
+    const runtime = resolvedRuntime({ fullReload: [] });
     const watcher = new EventEmitter() as EventEmitter & {
       add: ReturnType<typeof vi.fn>;
       getWatched: () => Record<string, string[]>;
@@ -113,8 +113,8 @@ function resolvedRuntime(overrides: Record<string, unknown> = {}) {
   const runtime = new ThemeRuntime(
     resolveThemeOptions({
       entry: "src/main.ts",
-      devBranches: false,
-      maxDevProcesses: false,
+      branchPrefix: false,
+      parallelWarn: false,
       ...overrides,
     }),
   );

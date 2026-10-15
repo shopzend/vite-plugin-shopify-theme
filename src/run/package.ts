@@ -8,19 +8,9 @@ import {
   rmSync,
 } from "node:fs";
 import { basename, join, relative, sep } from "node:path";
+import { THEME_DIRECTORIES } from "./theme-target";
 import { readZipEntries } from "./zip";
 
-const THEME_DIRECTORIES = [
-  "assets",
-  "blocks",
-  "config",
-  "layout",
-  "listings",
-  "locales",
-  "sections",
-  "snippets",
-  "templates",
-];
 const DEVELOPMENT_ENTRIES = new Set([".DS_Store", "__MACOSX", ".git", ".reference", ".vitify"]);
 
 export class ThemePackageError extends Error {}

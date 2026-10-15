@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     shopifyTheme({
       entry: loadEnv(mode, root).VITE_LIVE_ENTRY,
-      reload: false,
+      fullReload: false,
     }),
   ],
   resolve: {
@@ -124,8 +124,8 @@ abandoned by a killed process, acquisition fails closed and reports the guard pa
 - production form references Shopify `asset_url` assets;
 - development form references the local Vite server and `/@vite/client`.
 
-For a Git-backed theme, development requires the Git index to contain the current tracked
-production form. The first-time workflow is therefore:
+For a Git-backed theme, development requires a tracked Mixer Snippet. By default its indexed
+content must also contain the current production form. The first-time workflow is therefore:
 
 ```bash
 shopify-theme build --path theme-frame
@@ -134,15 +134,17 @@ git -C theme-frame commit -m "Initialize Vite assets"
 shopify-theme dev --path theme-frame --environment development
 ```
 
-At dev startup the plugin validates the indexed production form, sets `skip-worktree`, then writes
+At dev startup the plugin validates the indexed production form by default, sets `skip-worktree`, then writes
 the development form to the working tree. `git add -A` can therefore stage and commit all other
 theme code while dev is running. The flag and development form intentionally survive abnormal
 termination; the next dev overwrites them. Build clears the flag and leaves a visible production
 form. A non-Git Theme Target runs without index management.
 
-Missing, untracked, mismatched, or unknown Mixer Snippet markers block dev. This prevents a local
-development URL from entering a commit unnoticed. For an old or unknown marker, run
-`shopify-theme build --path <theme>` and stage the generated snippet once.
+By default, missing, mismatched, or unknown Mixer Snippet markers block dev. For an old or unknown
+marker, run `shopify-theme build --path <theme>` and stage the generated snippet once.
+Set `gitMixer: "track"` to skip only this indexed format check during dev, for example when
+using a legacy Mixer. The snippet must still be tracked and `skip-worktree` management stays enabled.
+Production validation, `doctor`, and `restore` keep their existing checks.
 
 ## Phone and LAN debugging
 
@@ -164,17 +166,17 @@ HTTPS proxy or tunnel origin can instead be configured as a complete `devOrigin`
 
 ## Options
 
-| Option            | Type                                  | Default               | Purpose                                                                                                                                                               |
-| ----------------- | ------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `entry`           | `string`                              | — (required)          | Entry file inside the Vite root, as a root-relative or absolute path. Dev injects its script tag; build bundles from it.                                              |
-| `themePath`       | `string`                              | —                     | Theme root relative to the current working directory or absolute. Required for direct Vite runs; the Theme Run CLI supplies it privately.                             |
-| `snippet`         | `string`                              | `"vite-mixer.liquid"` | Generated Mixer Snippet file name.                                                                                                                                    |
-| `devBranches`     | `string[] \| false`                   | `["dev"]`             | Git branch-prefix allowlist checked before dev starts; any match passes. `false` disables the check.                                                                  |
-| `worktree`        | `"skip" \| "off"`                     | `"skip"`              | `"skip"` manages the tracked Mixer with `skip-worktree`; `"off"` performs no Git operations.                                                                          |
-| `reload`          | `string[] \| false`                   | `[]`                  | Extra root-relative directories that trigger full reload. Vite module-graph files remain on HMR; `false` disables the reload plugin.                                  |
-| `devOrigin`       | `"local" \| "network" \| http(s) URL` | `"local"`             | Chooses the Vite origin written to the dev Mixer: resolved local URL, resolved network URL, or an explicit proxy/tunnel origin. Vite still owns transport and listen. |
-| `maxDevProcesses` | `number \| false`                     | `0`                   | Warns when pre-existing Shopify dev processes exceed the threshold. `false` disables the check.                                                                       |
-| `debug`           | `boolean`                             | `false`               | Enables debug logging. Read from this option only.                                                                                                                    |
+| Option         | Type                                  | Default               | Purpose                                                                                                                                                                                           |
+| -------------- | ------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `entry`        | `string`                              | — (required)          | Entry file inside the Vite root, as a root-relative or absolute path. Dev injects its script tag; build bundles from it.                                                                          |
+| `themePath`    | `string`                              | —                     | Theme root relative to the current working directory or absolute. Required for direct Vite runs; the Theme Run CLI supplies it privately.                                                         |
+| `mixerSnippet` | `string`                              | `"vite-mixer.liquid"` | Generated Mixer Snippet file name.                                                                                                                                                                |
+| `branchPrefix` | `string[] \| false`                   | `["dev"]`             | Git branch-prefix allowlist checked before dev starts; any match passes. Non-Git Theme Targets skip it; `false` disables the check.                                                               |
+| `gitMixer`     | `"verify" \| "track" \| false`        | `"verify"`            | `"verify"` requires the indexed Mixer production form at dev startup and manages the tracked Mixer with `skip-worktree`; `"track"` skips only the form check; `false` performs no Git operations. |
+| `fullReload`   | `string[] \| false`                   | `[]`                  | Extra root-relative directories that trigger full reload. Vite module-graph files remain on HMR; `false` disables the reload plugin.                                                              |
+| `devOrigin`    | `"local" \| "network" \| http(s) URL` | `"local"`             | Chooses the Vite origin written to the dev Mixer: resolved local URL, resolved network URL, or an explicit proxy/tunnel origin. Vite still owns transport and listen.                             |
+| `parallelWarn` | `number \| false`                     | `0`                   | Warns when pre-existing Shopify dev processes exceed the threshold. `false` disables the check.                                                                                                   |
+| `debug`        | `boolean`                             | `false`               | Enables debug logging. Read from this option only.                                                                                                                                                |
 
 Optional fields are normalized with `??`: an explicit `undefined` falls back to the default, while
 legitimate opt-out values such as `false` are kept as-is. UI libraries are deliberately outside
@@ -231,9 +233,12 @@ in the release manifest.
 
 Development uses Vite+; its Node requirements are declared in the installed toolchain.
 The plugin's consumer requirements remain in [package.json](package.json).
-Keep the Vite+ dependency and core alias in [package.json](package.json) aligned with
-the override in [pnpm-workspace.yaml](pnpm-workspace.yaml), and refresh both this package's
-lockfile and the host toolkit's lockfile when changing development dependencies.
+Development follows [Vite+'s dependency alignment](https://viteplus.dev/guide/local-cli#manual-installation)
+so direct Vite imports and the toolchain share one core implementation. Keep the
+[development dependencies](package.json) and [package-manager overrides](pnpm-workspace.yaml)
+aligned, and refresh both this package's lockfile and the host toolkit's lockfile when
+changing development dependencies. The plugin keeps its public Vite peer requirement;
+consumers do not need Vite+.
 
 ```bash
 vp check

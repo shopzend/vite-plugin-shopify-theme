@@ -1,12 +1,15 @@
 import type { ResolvedOptions, ShopifyThemeOptions } from "./types";
 
+// CLI 的 restore / merge / doctor 在 Vite 配置未提供 snippet 时同样回退到此名。
+export const DEFAULT_MIXER_SNIPPET = "vite-mixer.liquid";
+
 const DEFAULTS = {
-  snippet: "vite-mixer.liquid",
-  devBranches: ["dev"],
-  worktree: "skip",
-  reload: [],
+  mixerSnippet: DEFAULT_MIXER_SNIPPET,
+  branchPrefix: ["dev"],
+  gitMixer: "verify",
+  fullReload: [],
   devOrigin: "local",
-  maxDevProcesses: 0,
+  parallelWarn: 0,
   debug: false,
 } satisfies Partial<ShopifyThemeOptions>;
 
@@ -14,12 +17,12 @@ const DEFAULTS = {
 export function resolveThemeOptions(options: ShopifyThemeOptions): ResolvedOptions {
   return {
     ...options,
-    snippet: options.snippet ?? DEFAULTS.snippet,
-    devBranches: options.devBranches ?? DEFAULTS.devBranches,
-    worktree: options.worktree ?? DEFAULTS.worktree,
-    reload: options.reload ?? DEFAULTS.reload,
+    mixerSnippet: options.mixerSnippet ?? DEFAULTS.mixerSnippet,
+    branchPrefix: options.branchPrefix ?? DEFAULTS.branchPrefix,
+    gitMixer: options.gitMixer ?? DEFAULTS.gitMixer,
+    fullReload: options.fullReload ?? DEFAULTS.fullReload,
     devOrigin: options.devOrigin ?? DEFAULTS.devOrigin,
-    maxDevProcesses: options.maxDevProcesses ?? DEFAULTS.maxDevProcesses,
+    parallelWarn: options.parallelWarn ?? DEFAULTS.parallelWarn,
     debug: options.debug ?? DEFAULTS.debug,
   };
 }

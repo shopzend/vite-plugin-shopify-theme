@@ -1,12 +1,13 @@
 import { spawn, spawnSync } from "node:child_process";
-import pc from "picocolors";
+import { styleText } from "node:util";
 import {
   build as viteBuild,
   createServer,
   resolveConfig as viteResolveConfig,
   type ViteDevServer,
 } from "vite";
-import { mixerForm } from "./plugins/mixer";
+import { DEFAULT_MIXER_SNIPPET } from "./options";
+import { assertIndexedMixer } from "./plugins/mixer";
 import { currentThemeRun, withinThemeRun } from "./run/context";
 import { formatDiagnostics, inspectTheme } from "./run/doctor";
 import { mergeCommits, ThemeMergeError } from "./run/merge";
@@ -14,9 +15,7 @@ import { packageTheme, ThemePackageError } from "./run/package";
 import { acquireThemeTargetLock, ThemeTargetBusyError } from "./run/target-lock";
 import { assertThemeTarget, canonicalThemePath } from "./run/theme-target";
 import { verifyProductionTheme } from "./run/verify";
-import { indexFile, isGitRepository, restoreIndexFile, skipState } from "./utils/worktree";
-
-const DEFAULT_SNIPPET = "vite-mixer.liquid";
+import { isGitRepository, restoreIndexFile } from "./utils/git";
 
 const USAGE = `Usage: shopify-theme <command> --path <theme> [Shopify CLI options]
        shopify-theme merge --path <theme> <commit>...
@@ -82,7 +81,7 @@ export async function runCli(
       error instanceof ThemePackageError ||
       error instanceof ThemeMergeError
     ) {
-      console.error(pc.red(`error: ${error.message}`));
+      console.error(styleText("red", `error: ${error.message}`, { stream: process.stderr }));
       return 1;
     }
     throw error;
@@ -92,7 +91,7 @@ export async function runCli(
 async function runLocked(input: ThemeRunInput, adapter: ThemeRunAdapter): Promise<number> {
   if (input.mode === "restore") {
     await adapter.resolveConfig?.(input);
-    restoreMixer(input.themePath, currentThemeRun()?.snippet ?? DEFAULT_SNIPPET);
+    restoreMixer(input.themePath, currentThemeRun()?.snippet ?? DEFAULT_MIXER_SNIPPET);
     process.stdout.write("Mixer Snippet restored from the Git index.\n");
     return 0;
   }
@@ -105,7 +104,7 @@ async function runLocked(input: ThemeRunInput, adapter: ThemeRunAdapter): Promis
     const resolved = mergeCommits(
       input.themePath,
       input.commits,
-      currentThemeRun()?.snippet ?? DEFAULT_SNIPPET,
+      currentThemeRun()?.snippet ?? DEFAULT_MIXER_SNIPPET,
     );
     process.stdout.write(
       resolved.length > 0
@@ -149,7 +148,7 @@ async function runDoctor(input: ThemeRunInput, adapter: ThemeRunAdapter): Promis
     }
     const diagnostics = inspectTheme({
       themePath: input.themePath,
-      snippet: currentThemeRun()?.snippet ?? DEFAULT_SNIPPET,
+      snippet: currentThemeRun()?.snippet ?? DEFAULT_MIXER_SNIPPET,
       configError,
       shopifyExecutable: adapter.shopifyExecutable?.() ?? true,
     });
@@ -231,7 +230,7 @@ function exitCode(code: number): number {
 async function verifyProduction(input: ThemeRunInput): Promise<void> {
   const failures = verifyProductionTheme(
     input.themePath,
-    currentThemeRun()?.snippet ?? DEFAULT_SNIPPET,
+    currentThemeRun()?.snippet ?? DEFAULT_MIXER_SNIPPET,
   );
   if (failures.length > 0) throw new CliError(failures.join("\n"));
 }
@@ -239,12 +238,10 @@ async function verifyProduction(input: ThemeRunInput): Promise<void> {
 function restoreMixer(themePath: string, snippet: string): void {
   if (!isGitRepository(themePath)) throw new CliError(`${themePath} is not a Git repository`);
   const relative = `snippets/${snippet}`;
-  const state = skipState(themePath, relative);
-  if (state === "untracked") throw new CliError(`${relative} is not tracked in the Git index`);
-  if (mixerForm(indexFile(themePath, relative)) !== "prod") {
-    throw new CliError(
-      `${relative} in the Git index is not the current production Mixer Snippet. Run shopify-theme build --path ${themePath}, then git add ${relative}.`,
-    );
+  try {
+    assertIndexedMixer(themePath, relative, true);
+  } catch (error) {
+    throw new CliError((error as Error).message);
   }
   restoreIndexFile(themePath, relative);
 }

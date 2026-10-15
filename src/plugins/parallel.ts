@@ -3,30 +3,30 @@ import type { ThemeRuntime } from "../runtime";
 import { formatDevProcessWarning, listShopifyDevProcesses } from "../run/dev-processes";
 import { currentThemeRun } from "../run/context";
 
-interface ConcurrencySystem {
+interface ParallelSystem {
   platform: NodeJS.Platform;
   list(): ReturnType<typeof listShopifyDevProcesses>;
 }
 
-const productionSystem: ConcurrencySystem = {
+const productionSystem: ParallelSystem = {
   platform: process.platform,
   list: listShopifyDevProcesses,
 };
 
 // 仅 dev 清点启动前已经存在的 Shopify dev 进程。Theme Run 自己的 Shopify 子进程
 // 此时尚未 spawn，因此配额不包含本次运行，也不按主题名猜测进程所有权。
-export default function concurrency(
+export default function parallel(
   runtime: ThemeRuntime,
-  system: ConcurrencySystem = productionSystem,
+  system: ParallelSystem = productionSystem,
 ): Plugin {
-  const log = runtime.log("concurrency");
+  const log = runtime.log("parallel");
   return {
-    name: "shopify-theme:concurrency",
+    name: "shopify-theme:parallel",
     apply: "serve",
     configureServer() {
-      const max = runtime.options.maxDevProcesses;
+      const max = runtime.options.parallelWarn;
       if (max === false) {
-        log.debug("concurrency check disabled");
+        log.debug("parallel check disabled");
         return;
       }
       if (system.platform === "win32") {
@@ -42,7 +42,7 @@ export default function concurrency(
         return;
       }
 
-      log.debug(`found ${procs.length} pre-existing shopify dev process(es), max ${max}`);
+      log.debug(`found ${procs.length} pre-existing shopify dev process(es), warn above ${max}`);
       if (procs.length <= max) return;
       log.warn(formatDevProcessWarning(procs, currentThemeRun()?.devArgs));
     },
