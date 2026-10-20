@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
+import { styleText } from "node:util";
 import { mixerForm, renderName, rendersSnippet } from "../plugins/mixer";
 import { indexFile, isGitRepository, skipState } from "../utils/git";
 import { inspectThemeTargetLock } from "./target-lock";
@@ -9,6 +10,7 @@ export interface ThemeDiagnostic {
   code: string;
   status: "pass" | "fail" | "warn";
   message: string;
+  hint?: string;
 }
 
 export function inspectTheme(input: {
@@ -32,18 +34,24 @@ export function inspectTheme(input: {
 
   const relativeSnippet = `snippets/${input.snippet}`;
   const workingSnippet = resolve(input.themePath, relativeSnippet);
+  const themeArg = shellArg(relative(process.cwd(), input.themePath) || ".");
+  const rebuild = `shopify-theme build --path ${themeArg} && git -C ${themeArg} add ${relativeSnippet}`;
   diagnostics.push(
     existsSync(workingSnippet)
-      ? formDiagnostic("mixer.working", mixerForm(readFileSync(workingSnippet, "utf8")))
-      : fail("mixer.working", `${relativeSnippet} is missing`),
+      ? formDiagnostic("mixer.working", mixerForm(readFileSync(workingSnippet, "utf8")), rebuild)
+      : fail("mixer.working", `${relativeSnippet} is missing`, rebuild),
   );
 
   if (isGitRepository(input.themePath)) {
     const state = skipState(input.themePath, relativeSnippet);
     diagnostics.push(
       state === "untracked"
-        ? fail("mixer.index", `${relativeSnippet} is not tracked`)
-        : formDiagnostic("mixer.index", mixerForm(indexFile(input.themePath, relativeSnippet))),
+        ? fail("mixer.index", `${relativeSnippet} is not tracked`, rebuild)
+        : formDiagnostic(
+            "mixer.index",
+            mixerForm(indexFile(input.themePath, relativeSnippet)),
+            rebuild,
+          ),
     );
     diagnostics.push(
       state === "flagged"
@@ -74,7 +82,8 @@ export function inspectTheme(input: {
     lock.corrupt
       ? fail(
           "lock.active",
-          `unreadable lock record ${lock.file}; remove it after confirming no Theme Run is starting`,
+          `unreadable lock record ${lock.file}`,
+          "remove it after confirming no Theme Run is starting",
         )
       : lock.active && lock.lock
         ? warn("lock.active", `${lock.lock.mode} pid ${lock.lock.pid}`)
@@ -95,29 +104,62 @@ export function inspectTheme(input: {
   return diagnostics;
 }
 
-export function formatDiagnostics(diagnostics: ThemeDiagnostic[]): string {
-  return diagnostics
-    .map((diagnostic) => {
-      const mark = diagnostic.status === "pass" ? "PASS" : diagnostic.status.toUpperCase();
-      return `${mark.padEnd(4)} ${diagnostic.code} ${diagnostic.message}`;
-    })
-    .join("\n");
+const MARKS = {
+  pass: styleText("green", "✔"),
+  warn: styleText("yellow", "▲"),
+  fail: styleText("red", "✖"),
+} satisfies Record<ThemeDiagnostic["status"], string>;
+
+export function formatDiagnostics(diagnostics: ThemeDiagnostic[], themePath: string): string {
+  const width = Math.max(...diagnostics.map((diagnostic) => diagnostic.code.length));
+  const indent = " ".repeat(width + 6);
+  const lines = diagnostics.flatMap((diagnostic) => {
+    const code = styleText("dim", diagnostic.code.padEnd(width));
+    const line = `  ${MARKS[diagnostic.status]} ${code}  ${diagnostic.message}`;
+    return diagnostic.hint
+      ? [line, `${indent}${styleText("cyan", `→ ${diagnostic.hint}`)}`]
+      : [line];
+  });
+  const count = (status: ThemeDiagnostic["status"]) =>
+    diagnostics.filter((diagnostic) => diagnostic.status === status).length;
+  const summary = [
+    count("fail") > 0 && styleText("red", `${count("fail")} failed`),
+    count("warn") > 0 &&
+      styleText("yellow", `${count("warn")} warning${count("warn") > 1 ? "s" : ""}`),
+    styleText("green", `${count("pass")} passed`),
+  ].filter(Boolean);
+  return [
+    "",
+    `${styleText("bold", "Theme Target")} ${themePath}`,
+    "",
+    ...lines,
+    "",
+    summary.join(styleText("dim", " · ")),
+  ].join("\n");
 }
 
-function formDiagnostic(code: string, form: ReturnType<typeof mixerForm>): ThemeDiagnostic {
+function formDiagnostic(
+  code: string,
+  form: ReturnType<typeof mixerForm>,
+  rebuild: string,
+): ThemeDiagnostic {
   return form === "prod"
     ? pass(code, "production Mixer form")
     : form === "dev"
       ? warn(code, "development Mixer form")
-      : fail(code, "unknown Mixer form; run build and git add the generated snippet");
+      : fail(code, "unknown Mixer form", rebuild);
+}
+
+function shellArg(value: string): string {
+  return /^[\w./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 function pass(code: string, message: string): ThemeDiagnostic {
   return { code, status: "pass", message };
 }
 
-function fail(code: string, message: string): ThemeDiagnostic {
-  return { code, status: "fail", message };
+function fail(code: string, message: string, hint?: string): ThemeDiagnostic {
+  return { code, status: "fail", message, hint };
 }
 
 function warn(code: string, message: string): ThemeDiagnostic {

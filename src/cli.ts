@@ -156,7 +156,7 @@ async function runDoctor(input: ThemeRunInput, adapter: ThemeRunAdapter): Promis
     process.stdout.write(
       input.json
         ? `${JSON.stringify({ ok, diagnostics }, null, 2)}\n`
-        : `${formatDiagnostics(diagnostics)}\n`,
+        : `${formatDiagnostics(diagnostics, input.themePath)}\n`,
     );
     return ok ? 0 : 1;
   });
