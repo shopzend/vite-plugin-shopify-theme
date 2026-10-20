@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 - 2026-10-20
+
+- Make `doctor` text output easier to scan: colored status marks, aligned codes, the Theme Target
+  path, and a pass/warn/fail summary.
+- Add an optional `hint` to doctor diagnostics; Mixer failures give the exact `shopify-theme build`
+  and `git add` commands for the target.
+
 ## 0.2.0 - 2026-10-15
 
 - Publish Theme Target Lock records atomically and fail closed on unreadable records; set
