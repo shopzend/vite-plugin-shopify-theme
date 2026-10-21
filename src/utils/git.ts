@@ -58,6 +58,26 @@ export function indexFile(cwd: string, pathspec: string): string {
   return execFileSync("git", ["show", `:./${pathspec}`], { cwd, encoding: "utf8" });
 }
 
+export function resolvesCommit(cwd: string, ref: string): boolean {
+  return (
+    spawnSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+      cwd,
+      stdio: "ignore",
+    }).status === 0
+  );
+}
+
+// <ref> 中的文件内容；该提交不含此路径时返回 undefined。
+export function revisionFile(cwd: string, ref: string, pathspec: string): string | undefined {
+  const result = spawnSync("git", ["show", `${ref}:./${pathspec}`], {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  return result.status === 0 ? result.stdout : undefined;
+}
+
 export function restoreIndexFile(cwd: string, pathspec: string): SkipState {
   const state = skipState(cwd, pathspec);
   if (state === "untracked") return state;

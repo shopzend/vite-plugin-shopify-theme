@@ -28,6 +28,12 @@ export interface ShopifyThemeOptions {
    * 多个 dev 进程共享同一账号的 API 配额，会拖慢预览甚至触发 429/502。
    */
   parallelWarn?: number | false;
+  /**
+   * 店铺当前上线版本对应的 Git ref（如 GitHub 集成连接 main 时的 "origin/main"）。
+   * 设置后，发布门禁要求上下文 JSON 引用的 section / block 已在该版本的 parent 中——
+   * Shopify GitHub 同步先于 parent 校验上下文 JSON。默认不设置，只校验本地一致性。
+   */
+  liveRef?: string;
   /** 开启 debug 日志；默认 false（经参数传入，不读 process.env） */
   debug?: boolean;
 }

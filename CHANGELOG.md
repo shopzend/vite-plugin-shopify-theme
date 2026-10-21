@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Check contextual JSON (`*.context.*.json` in `templates/` and `sections/`) in the production
+  gate: `order` / `block_order` ids and overrides without `type` must exist in the parent.
+- Add the `liveRef` option. When set, the gate also rejects contextual JSON that references a
+  section or block the parent at that ref does not have yet, which Shopify's GitHub sync would
+  reject because it validates context files before their parent.
+
 ## 0.2.1 - 2026-10-20
 
 - Make `doctor` text output easier to scan: colored status marks, aligned codes, the Theme Target

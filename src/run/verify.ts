@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { mixerAssetReferences, mixerForm, renderName, rendersSnippet } from "../plugins/mixer";
+import { contextualJsonFailures } from "./contextual";
 import { THEME_DIRECTORIES } from "./theme-target";
 
 const SCAN_EXTENSIONS = [".liquid", ".js", ".css"];
@@ -12,10 +13,14 @@ const ALIAS_IMPORT = /^\s*import .*['"](?:#theme|@(?:theme|vite))\//m;
 // 未批准的第三方 CDN：不符合 Theme Store 的资产托管要求。
 const UNAPPROVED_CDN = /cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com/;
 
-// 构建后的发布门禁：mixer 生产形态 + 全主题树三类残留扫描。
+// 构建后的发布门禁：mixer 生产形态 + 全主题树三类残留扫描 + 上下文 JSON 与 parent 一致。
 // 返回失败清单（含命中文件），空数组即通过。
-export function verifyProductionTheme(themePath: string, snippet: string): string[] {
-  const failures: string[] = [];
+export function verifyProductionTheme(
+  themePath: string,
+  snippet: string,
+  liveRef?: string,
+): string[] {
+  const failures: string[] = contextualJsonFailures(themePath, liveRef);
 
   const mixerFile = resolve(themePath, "snippets", snippet);
   const mixer = existsSync(mixerFile) ? readFileSync(mixerFile, "utf8") : "";

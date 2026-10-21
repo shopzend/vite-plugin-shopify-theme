@@ -55,7 +55,10 @@ export default function config(runtime: ThemeRuntime): Plugin {
       }
       const themePath = canonicalThemePath(target);
       assertThemeTarget(themePath);
-      if (run) run.snippet = runtime.options.mixerSnippet;
+      if (run) {
+        run.snippet = runtime.options.mixerSnippet;
+        run.liveRef = runtime.options.liveRef;
+      }
 
       // snippet 已由工厂 DEFAULTS 补齐，此处直接读。
       const context = runtime.resolve({

@@ -4,6 +4,7 @@ export interface ThemeRunContext {
   themePath: string;
   lockToken: string;
   snippet?: string;
+  liveRef?: string;
   devArgs?: string[];
 }
 

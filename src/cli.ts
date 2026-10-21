@@ -228,9 +228,11 @@ function exitCode(code: number): number {
 }
 
 async function verifyProduction(input: ThemeRunInput): Promise<void> {
+  const run = currentThemeRun();
   const failures = verifyProductionTheme(
     input.themePath,
-    currentThemeRun()?.snippet ?? DEFAULT_MIXER_SNIPPET,
+    run?.snippet ?? DEFAULT_MIXER_SNIPPET,
+    run?.liveRef,
   );
   if (failures.length > 0) throw new CliError(failures.join("\n"));
 }
