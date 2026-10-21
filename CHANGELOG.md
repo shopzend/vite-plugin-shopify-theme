@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-10-21
 
 - Check contextual JSON (`*.context.*.json` in `templates/` and `sections/`) in the production
   gate: `order` / `block_order` ids and overrides without `type` must exist in the parent.
