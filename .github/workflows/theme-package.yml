@@ -77,7 +77,7 @@ jobs:
         working-directory: toolkit
         run: |
           shopify theme check --path theme-ci
-          pnpm shopify package --path theme-ci
+          vp run shopify package --path theme-ci
       - name: Verify tracked runtime files and write the manifest
         working-directory: toolkit/theme-ci
         env:

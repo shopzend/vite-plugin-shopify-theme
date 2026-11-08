@@ -74,7 +74,7 @@ jobs:
           echo "THEME_DEMO_SHA=$demo_sha" >> "$GITHUB_ENV"
           merge_log="$RUNNER_TEMP/candidate-merge.log"
           status=0
-          pnpm --silent shopify merge --path theme-ci "$demo_sha" "$source_sha" 2>&1 \
+          vp run shopify merge --path theme-ci "$demo_sha" "$source_sha" 2>&1 \
             | tee "$merge_log" || status=$?
           # The step summary is Markdown: drop terminal color codes and keep the log verbatim.
           {
@@ -89,7 +89,7 @@ jobs:
         working-directory: toolkit
         run: |
           shopify theme check --path theme-ci --output json > "$RUNNER_TEMP/theme-check.json"
-          pnpm shopify build --path theme-ci
+          vp run shopify build --path theme-ci
       - name: Commit production assets to candidate
         working-directory: toolkit/theme-ci
         run: |

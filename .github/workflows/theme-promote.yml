@@ -67,7 +67,7 @@ jobs:
         working-directory: toolkit
         run: |
           shopify theme check --path theme-ci
-          pnpm shopify build --path theme-ci
+          vp run shopify build --path theme-ci
           git -C theme-ci diff --exit-code -- assets snippets layout
           test -z "$(git -C theme-ci ls-files --others --exclude-standard assets snippets layout)"
       - name: Promote to demo branch

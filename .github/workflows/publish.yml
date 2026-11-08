@@ -25,7 +25,7 @@ jobs:
 
       - uses: voidzero-dev/setup-vp@v1.21.1
         with:
-          node-version: "24"
+          node-version: lts
 
       # 版本门禁：package.json 里的 version 与 npm 已发布版本不同才继续发布。
       # main 的非版本提交仍跑 check，但会在此跳过 build / publish。
@@ -50,4 +50,4 @@ jobs:
       # npm >=11.5.1 从 GitHub OIDC 换取短期发布凭据，并自动生成 provenance。
       - name: Publish
         if: steps.version.outputs.changed == 'true'
-        run: vp env exec --node 24 --npm '^11.5.1' npm publish --ignore-scripts --access public
+        run: vp env exec --npm '^11.5.1' npm publish --ignore-scripts --access public

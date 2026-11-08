@@ -57,6 +57,7 @@ runs:
       uses: voidzero-dev/setup-vp@v1.21.1
       with:
         working-directory: toolkit
+        node-version: lts
         cache: false
         run-install: false
     - name: Install locked dependencies and Shopify CLI
