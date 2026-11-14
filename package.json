@@ -49,6 +49,9 @@
     "typecheck": "tsc --noEmit",
     "prepare": "obuild"
   },
+  "dependencies": {
+    "@iconify/utils": "^3.1.7"
+  },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "jiti": "^2.7.0",

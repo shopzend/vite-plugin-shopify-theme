@@ -2,6 +2,7 @@ import type { ResolvedOptions, ShopifyThemeOptions } from "./types";
 
 // CLI 的 restore / merge / doctor 在 Vite 配置未提供 snippet 时同样回退到此名。
 export const DEFAULT_MIXER_SNIPPET = "vite-mixer.liquid";
+export const ICONS_CONFIG_FILE = "shopify.icons.json";
 
 const DEFAULTS = {
   mixerSnippet: DEFAULT_MIXER_SNIPPET,

@@ -9,6 +9,7 @@ import gitMixer from "./plugins/git-mixer";
 import reload from "./plugins/reload";
 import mixer from "./plugins/mixer";
 import lock from "./plugins/lock";
+import icons from "./plugins/icons";
 import { ThemeRuntime } from "./runtime";
 
 export type { ShopifyThemeOptions } from "./types";
@@ -29,6 +30,7 @@ export default function shopifyTheme(options: ShopifyThemeOptions): PluginOption
     parallel(runtime),
     gitMixer(runtime),
     lock(runtime),
+    icons(runtime),
     reload(runtime),
     mixer(runtime),
   ];

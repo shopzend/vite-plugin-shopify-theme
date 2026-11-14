@@ -1,7 +1,8 @@
 # vite-plugin-shopify-theme
 
 Connect a standard Shopify theme to Vite: one Theme Run CLI for development, production builds,
-and pushes, plus one Vite plugin factory for HMR and production asset injection.
+and pushes, plus one Vite plugin factory for HMR, production asset injection, and optional icon
+snippet generation.
 
 ## Requirements
 
@@ -62,6 +63,22 @@ The plugin owns configuration derived from the Theme Target:
 
 The host owns the entry, root-source aliases, server transport settings, and CSS/JavaScript
 framework plugins. The plugin does not parse project environment files or `shopify.theme.toml`.
+
+## Icon snippets
+
+Optional icon generation keeps each theme's icon selection with its Theme Target and converts
+the selected icon libraries into Liquid snippets. The generated SVG ships with the theme, so
+storefront rendering needs neither an icon JavaScript library nor an icon API request.
+
+Use the configuration and manifest example in the [public options](src/types/index.ts).
+The [generator](src/icons.ts) owns source loading, snippet parameters, file ownership, and output
+reconciliation; the [icon plugin](src/plugins/icons.ts) connects generation to the development
+and build lifecycles.
+
+Commit the theme's selection and generated snippets together. Edit the selection and regenerate
+instead of hand-editing generated files; keep hand-authored snippets outside the generator's
+ownership. Install the selected icon libraries in the host toolchain so local development and
+CI resolve the same sources from its lockfile.
 
 ## Theme Run CLI
 

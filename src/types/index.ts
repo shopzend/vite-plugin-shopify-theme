@@ -4,6 +4,23 @@ export interface ShopifyThemeOptions {
   themePath?: string;
   /** Vite root 内的入口（可传 root 相对路径或绝对路径，必填） */
   entry: string;
+  /**
+   * Generate Liquid icon snippets from this Theme Target's shopify.icons.json; default false.
+   * Install each selected @iconify-json/<collection> package in the consuming project.
+   *
+   * @example
+   * // Vite: shopifyTheme({ entry: "src/main.ts", icons: true })
+   * // <theme>/shopify.icons.json:
+   * // { "lucide": ["search", "shopping-cart"], "tabler": ["truck"] }
+   * // Liquid: {% render 'icon-lucide-search', size: 20, stroke_width: 1.5 %}
+   *
+   * Snippets use a square size (default 24), preserve the source viewBox, and inherit
+   * currentColor. stroke_width overrides source strokes; filled paths have no adjustable
+   * stroke. Only monochrome icons are accepted. Optional class is HTML-escaped.
+   * Commit generated snippets with the theme; edit the selection instead of the output.
+   * An empty object clears managed icons; a missing/invalid file leaves existing output intact.
+   */
+  icons?: boolean;
   /** 生成的 mixer snippet 文件名；默认 "vite-mixer.liquid" */
   mixerSnippet?: string;
   /** dev 下允许的主题仓库分支前缀列表（任一命中即通过）；默认 ["dev"]，传 false 关闭 */
