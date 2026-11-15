@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 - 2026-11-15
+
+- Add optional per-theme icon generation from locally installed Iconify collections, including
+  Lucide, Tabler, and MDI, into standalone Liquid snippets.
+- Support icon size, stroke width, inherited `currentColor`, and optional CSS classes while
+  preserving source geometry and original default stroke widths.
+- Generate on development startup, selection changes, and production builds; skip unchanged
+  output and remove only obsolete generated snippets, protecting hand-authored files.
+- Keep recoverable selection errors in the terminal and preserve the last valid output; release
+  development resources on startup failure and cancel pending generation when closing.
+
 ## 0.3.0 - 2026-10-21
 
 - Check contextual JSON (`*.context.*.json` in `templates/` and `sections/`) in the production
